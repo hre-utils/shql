@@ -1,0 +1,9 @@
+{
+   "this": "that",    # This is a comment
+   "here": [
+      "one", "two", "three"
+   ],
+   "more": {
+      "beep": "boop"
+   }
+}

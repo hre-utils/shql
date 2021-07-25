@@ -1,0 +1,64 @@
+= ref
+
+
+== Thinkies
+json based database for 'log', instead of a flat text file
+realistically we'd want a noSQL model, but I don't think we can do that.
+
+each application is a key in the database, properties being
+   * log[], general sequential Note(s)
+      * Note[datetime, text]
+   * additions[], config files, cron jobs, things that will need to be
+     removed on exit
+
+can actually bake in the config file management of `conf` by just looking
+at a `conf{name->path, ...}` dict. Then call conf app.name, or if there's
+only one present, it uses that entry.
+
+'''
+
+Write my own .json parser.
+Seems like a fun thing to do.
+JSON -> bash -> JSON.
+Only uses dicts and lists, so pretty straightforward.
+
+Does allow me to do things that `jq`/JSON does not, like self-references.
+Can have one article refer to another.
+
+[source,json]
+----
+{
+   "system": {
+      "logs": [
+         {
+            "time": "...",
+            "text": "..."
+         },
+      ],
+      "ref": [
+         {
+            "link": "<optional>",
+            "text": "...",
+            "tags": [ "tag1", "tag2" ]
+            ]
+         }
+      ],
+      "additions": [
+         {
+            "text": "...",
+            "desc": "..."
+         }
+      ],
+      "conf": {
+         "name": "path",
+         "name2": "path2"
+      }
+   },
+   "template": {
+      "logs": [],
+      "ref": [],
+      "additions": [],
+      "conf": {}
+   }
+}
+----
