@@ -260,39 +260,57 @@ declare -Ag ROOT_NODE
 # Is this realistically making a compiler? I think so. What people would now
 # refer to as a "transpiler".
 #
-# Need to do some thinkies.
-# Given the following object:
-# {
-#    "this": "that",
-#    "dict": {
-#       "child": "value",
-#       "child2": "value"
-#    },
-#    "list": [
-#       "one", "two", "three"
-#    ]
-# } 
-# 
-# Should create the following data structures
-#  declare -A ROOT_NODE=(
-#     
-#  )
-#
 # Everything always starts with the ROOT_NODE, which may be either a string,
 # list, or dict. Depending on the type we'll have a function that creates the
-# corresponding data type, and inserts the value(s).
-
-# May need a function like the one below when parsing to either read a list of
-# values, or key/value pairs. Don't know yet.
+# corresponding data type, and inserts the value(s)?
+#
+## May need a function like the one below when parsing to either read a list of
+## values, or key/value pairs. Don't know yet.
 #function get_type {
 #   [[ $(declare -p $1) =~ declare\ (.*) $1 ]]
-#   
 #   case "${BASH_REMATCH[1]//[-]}" in
 #      'a')  echo 'LIST' ;;
 #      'A')  echo 'DICT' ;;
 #      '--') echo 'STRING' ;;
 #   esac
 #}
+#
+# Need to do some thinkies.
+#═══════════════════════════════════╡ GIVEN ╞═══════════════════════════════════
+# Hmm, I've been thinking about this pretty a lot. Gone through a bunch of
+# possible variations. Not really able to come up with a great solution. Been
+# trying to do a double-dict approach, rather than a functions based approach.
+# Maybe this is the conceptual gap of not getting the symbol table, which could
+# help as an intermediate stage?
+#
+# Need to come up with a way of creating AST nodes too. Nodes can just be
+# dictionaries. Will need a few new arrays to hold the names of the created
+# nodes. A node potentially holds a list of its children.
+#
+# I think we should be able to evaluate directly from the AST now that I think
+# about it.
+#
+# Is there a reason to go further than the AST, "compile" down to straight up
+# bash, so we can "cache" the output? md5hash to check for diffs, if not use
+# existing cached results. That would allow us to potentially evaluate off the
+# AST directly, then save in case the user makes a second query.
+#
+#  {
+#     "this": "that",
+#     "foo": {
+#        "child": "value",
+#        "child2": "value"
+#     },
+#     "bar": [
+#        "one", "two", "three"
+#     ]
+#  }
+#
+#
+
+#─────────────────────────────────( complete )──────────────────────────────────
+# More complete w/ nested structure
+
 
 #══════════════════════════════════╡ ENGAGE ╞═══════════════════════════════════
 lex
