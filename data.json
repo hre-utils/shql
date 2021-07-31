@@ -1,7 +1,5 @@
-# This
-
 {
-   "this": "that",    # This is a comment
+   "this": "that",
    "here": [
       "one", "two", "three"
    ],

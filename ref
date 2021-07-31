@@ -1,11 +1,22 @@
 #!/bin/bash
-#
 # changelog
 #  2021-07-24  :: Created
 #
 # desc :: starting with some real quick and dirty stuff here to see if this
 #         is going to work at all--attempt is to make a basic, but featureful,
-#         .json lexer & parser in bash.
+#         .json lexer & parser in bash. It shall be .shon. Shell object
+#         notation.
+
+# Color garbage.
+rst=$(tput sgr0)                                   # Reset
+bk="$(tput setaf 0)"                               # Black
+rd="$(tput setaf 1)"  ;  brd="$(tput bold)${rd}"   # Red     ;  Bright Red
+gr="$(tput setaf 2)"  ;  bgr="$(tput bold)${gr}"   # Green   ;  Bright Green
+yl="$(tput setaf 3)"  ;  byl="$(tput bold)${yl}"   # Yellow  ;  Bright Yellow
+bl="$(tput setaf 4)"  ;  bbl="$(tput bold)${bl}"   # Blue    ;  Bright Blue
+mg="$(tput setaf 5)"  ;  bmg="$(tput bold)${mg}"   # Magenta ;  Bright Magenta
+cy="$(tput setaf 6)"  ;  bcy="$(tput bold)${cy}"   # Cyan    ;  Bright Cyan
+wh="$(tput setaf 7)"  ;  bwh="$(tput bold)${wh}"   # White   ;  Bright White
 
 
 INFILE="$1"
@@ -27,18 +38,44 @@ declare -i GLOBAL_TOKEN_NUMBER=0
 
 declare -ag CHARRAY=()
 declare -Ag CURSOR=(
-   [lineno]=0
-   [colno]=1
+   [lineno]=1
+   [colno]=0
    [pos]=-1
    # Kinda dumb and hacky. Starting at (-1) so the first call to advance() will
    # increment by 1, thus reading the *next* character, the first.
 )
 
+declare -AG FREEZE
 declare -g CURRENT PEEK BUFFER
 
+#═══════════════════════════╡ PRINTING & DEBUGGING ╞════════════════════════════
+function print_tokens {
+   declare -A colormap=(
+      [DOT]="$yl"
+      [COLON]="$wh"
+      [COMMA]="$wh"
+      [STRING]="$rd"
+      [COMMENT]="$cy"
+      [L_BRACE]="$wh"
+      [R_BRACE]="$wh"
+      [L_BRACKET]="$wh"
+      [R_BRACKET]="$wh"
+   )
 
+   for tname in "${TOKENS[@]}" ; do
+      declare -n t="$tname"
+      declare col="${colormap[${t[type]}]}"
+      printf "${col}%-10s${rst}  ${bk}%-7s${rst}  ${col}${t[data]}${rst}\n" \
+         ${t[type]} \
+         "${t[lineno]},${t[colno]}"
+   done
+}
+
+
+#═══════════════════════════════════╡ LEXER ╞═══════════════════════════════════
 function Token {
    ttype="$1"
+   data="${2:-$BUFFER}"
 
    if [[ -z "$ttype" ]] ; then
       echo "Missing \$ttype" ; exit 2
@@ -53,24 +90,22 @@ function Token {
 
    # Data.
    t[type]="$ttype"
-   t[data]="$BUFFER"
+   t[data]="$data"
 
    # Meta information.
-   t[lineno]=${CURSOR[lineno]}
-   t[colno]=${CURSOR[colno]}
-   t[pos]=${CURSOR[pos]}
+   t[lineno]=${FREEZE[lineno]}
+   t[colno]=${FREEZE[colno]}
+   t[pos]=${FREEZE[pos]}
 
    # Increment.
    ((GLOBAL_TOKEN_NUMBER++))
-
-   # Pretty print?
-   #echo "${t[type]} ${t[lineno]},${t[colno]} ${t[data]@Q}"
 }
 
 
 function advance {
-   # Advance position in file.
+   # Advance position in file, and position in line.
    ((CURSOR[pos]++))
+   ((CURSOR[colno]++))
 
    CURRENT=
    PEEK=
@@ -85,51 +120,61 @@ function advance {
 
    if [[ "$CURRENT" == $'\n' ]] ; then
       ((CURSOR[lineno]++))    # Increment line number.
-      CURSOR[colno]=1         # Reset column position.
+      CURSOR[colno]=0         # Reset column position.
    fi
 }
 
 
 function comment {
-   BUFFER="$CURRENT"
-
    while [[ -n $CURRENT ]] ; do
       [[ "$PEEK" =~ [$'\n'] ]] && break
-      advance ; BUFFER+="$CURRENT"
+      advance
    done
-
-   # Create token.
-   Token 'COMMENT'
 }
 
 
 function string {
    delim="$1"
-   BUFFER=''
+   declare -a buffer=()
 
    while [[ -n $CURRENT ]] ; do
-      [[ "$PEEK" =~ [${delim@Q}] ]] && break
+      if [[ "$PEEK" =~ [$delim] ]] ; then
+         if [[ "${buffer[-1]}" == '\\' ]] ; then
+            unset buffer[-1]
+         else
+            break
+         fi
+      fi
       advance
-      BUFFER+="$CURRENT"
+      buffer+=( "$CURRENT" )
    done
 
-   # Skip final closing ('|").
-   advance
+   # Set global buffer to joined output of local buffer.
+   # >>> BUFFER = ''.join(local_buffer)
+   BUFFER=''
+   for c in "${buffer[@]}" ; do
+      BUFFER+="$c"
+   done
 
    # Create token.
    Token 'STRING'
+
+   # Skip final closing ('|").
+   advance
 }
 
 
-function munch {
-   delim="$1"
+function identifier {
    BUFFER="$CURRENT"
 
    while [[ -n $CURRENT ]] ; do
-      echo "[[ ${PEEK@Q} =~ [${delim@Q}] ]]"
-      [[ "${PEEK}" =~ [${delim@Q}] ]] && break
+      [[ "${PEEK}" =~ [^[:alnum:]_] ]] && break
       advance ; BUFFER+="$CURRENT"
    done
+
+   #Token 'IDENTIFIER'
+   local loc="[${FREEZE[lineno]}:${FREEZE[colno]}]"
+   Token 'ERROR'  "Syntax Error: $loc 'Identifier' not yet implemented."
 }
 
 
@@ -144,6 +189,12 @@ function lex {
       advance
       [[ -z $CURRENT ]] && break
 
+      # "Freeze" the line number and cursor number, such that they're attached
+      # to the *start* of a token, rather than the end.
+      FREEZE[lineno]=${CURSOR[lineno]}
+      FREEZE[colno]=${CURSOR[colno]}
+      FREEZE[pos]=${CURSOR[pos]}
+
       # Skip comments.
       if [[ "$CURRENT" == '#' ]] ; then
          comment ; continue
@@ -153,18 +204,96 @@ function lex {
       [[ "$CURRENT" =~ [[:space:]] ]] && continue
 
       # Symbols.
-      [[ "$CURRENT" == ':' ]] && Token 'COLON'     && continue
-      [[ "$CURRENT" == '[' ]] && Token 'L_BRACKET' && continue
-      [[ "$CURRENT" == ']' ]] && Token 'R_BRACKET' && continue
-      [[ "$CURRENT" == '{' ]] && Token 'L_BRACE'   && continue
-      [[ "$CURRENT" == '}' ]] && Token 'R_BRACE'   && continue
+      [[ "$CURRENT" == '.' ]] &&  Token       'DOT' "$CURRENT" &&  continue
+      [[ "$CURRENT" == ':' ]] &&  Token     'COLON' "$CURRENT" &&  continue
+      [[ "$CURRENT" == ',' ]] &&  Token     'COMMA' "$CURRENT" &&  continue
+      [[ "$CURRENT" == '[' ]] &&  Token 'L_BRACKET' "$CURRENT" &&  continue
+      [[ "$CURRENT" == ']' ]] &&  Token 'R_BRACKET' "$CURRENT" &&  continue
+      [[ "$CURRENT" == '{' ]] &&  Token   'L_BRACE' "$CURRENT" &&  continue
+      [[ "$CURRENT" == '}' ]] &&  Token   'R_BRACE' "$CURRENT" &&  continue
 
       # Strings.
       if [[ "$CURRENT" =~ [\"\'] ]] ; then
          string "$CURRENT" ; continue
       fi
+
+      # Identifiers.
+      if [[ "$CURRENT" =~ [[:alpha:]_] ]] ; then
+         identifier ; continue
+      fi
    done
 }
 
+#══════════════════════════════════╡ PARSER ╞═══════════════════════════════════
+#────────────────────────────────( error pass )─────────────────────────────────
+declare -a errors_found=()
 
+for tname in "${TOKENS[@]}" ; do
+   declare -n t="$tname"
+   if [[ ${t[type]} == 'ERROR' ]] ; then
+      echo "${t[data]}"
+   fi
+done
+
+if [[ ${#errors_found[@]} -gt 0 ]] ; then
+   for e in "${errors_found[@]}" ; do
+      echo "$e"
+   done
+   exit -1
+fi
+
+#──────────────────────────────────( parsing )──────────────────────────────────
+declare -Ag ROOT_NODE
+
+# What is the grammar?
+#     data   -> (dict|list|string)
+#     dict   -> '{' string COLON data [COMMA dict]* '}'
+#     list   -> '[' data [COMMA data]* ']'
+#     STRING -> ('|") WORD ('|")
+#     WORD   -> [a-zA-Z_][a-zA-Z0-9_]*
+#
+# Do we need to create tree nodes, or can we parse directly into lists & dicts?
+# I think we need to make a tree of *names* first.
+# Then based on our name tree, we can make functions that can either query, or
+# pretty print the underlying data.
+#
+# Is this realistically making a compiler? I think so. What people would now
+# refer to as a "transpiler".
+#
+# Need to do some thinkies.
+# Given the following object:
+# {
+#    "this": "that",
+#    "dict": {
+#       "child": "value",
+#       "child2": "value"
+#    },
+#    "list": [
+#       "one", "two", "three"
+#    ]
+# } 
+# 
+# Should create the following data structures
+#  declare -A ROOT_NODE=(
+#     
+#  )
+#
+# Everything always starts with the ROOT_NODE, which may be either a string,
+# list, or dict. Depending on the type we'll have a function that creates the
+# corresponding data type, and inserts the value(s).
+
+# May need a function like the one below when parsing to either read a list of
+# values, or key/value pairs. Don't know yet.
+#function get_type {
+#   [[ $(declare -p $1) =~ declare\ (.*) $1 ]]
+#   
+#   case "${BASH_REMATCH[1]//[-]}" in
+#      'a')  echo 'LIST' ;;
+#      'A')  echo 'DICT' ;;
+#      '--') echo 'STRING' ;;
+#   esac
+#}
+
+#══════════════════════════════════╡ ENGAGE ╞═══════════════════════════════════
 lex
+print_tokens
