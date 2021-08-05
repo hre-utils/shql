@@ -53,13 +53,16 @@ declare -- CURRENT PEEK BUFFER
 
 #──────────────────────────────────( parsing )──────────────────────────────────
 declare -A _ROOT=()
-declare -a PREFIX=( _ROOT )
 
 # Same dumb nonsense here as in 11k. Starting at -1 so initial advance is to 0.
 declare -i tIDX=-1
 declare -- TOKEN tNAME tPEEK1 tPEEK2
 # tNAME is the tname of the current token.
 # TOKEN is a nameref to the token itself.
+
+# AST generation
+declare -- AST_NODE
+declare -i GLOBAL_AST_NUMBER=0
 
 #──────────────────────────────────( output )───────────────────────────────────
 declare -i INDNT_SPS=2     # How many spaces per level of indentation
@@ -344,6 +347,15 @@ function raise_parse_error {
 }
 
 
+function raise_key_error {
+   local loc="[${TOKEN[lineno]}:${TOKEN[colno]}]"
+   printf "Key Error: ${loc} "
+   printf "Key ${1@Q} invalid. Must be a valid 'word'.\n"
+
+   exit -3
+}
+
+
 function t_advance {
    # Advance position in file, and position in line.
    ((tIDX++)) 
@@ -372,27 +384,28 @@ function t_advance {
 }
 
 
-function Dictionary {
-   # Since we can't actually create and return a uniquely identified dictionary
-   # object, we're gonna have to do some hacky bash nonsense. Each successive
-   # "object" shall be a dictionary couplet. What kind of data do we neeed to
-   # pass in, and what do we need to return?
-   #  IN:  Current path prefix. This should be held in a list that we push
-   #       to, and pop from, as we increment & decremet.
-   #  OUT: Name of the created dictionary's prefix.
-   printf
+function mkDictionary {
+   local node_name="_NODE_${GLOBAL_AST_NUMBER}"
 
-   declare -gA "${prefix}__$1"=
+   declare -gA $node_name
+   declare -gn AST_NODE="$node_name"
+
+   ((GLOBAL_AST_NUMBER++))
 }
 
 
-function List {
-   printf
+function mkList {
+   local node_name="_NODE_${GLOBAL_AST_NUMBER}"
+
+   declare -ga $node_name
+   declare -gn AST_NODE="$node_name"
+
+   ((GLOBAL_AST_NUMBER++))
 }
 
 
-function String {
-   printf
+function mkString {
+   echo -n #pass
 }
 
 
@@ -433,18 +446,6 @@ function munch {
 function parse {
    check_lex_errors
 
-   # Create initial root AST node. Nodes, as a class, all have a [type] prop,
-   #  type: LIST, DICT, STRING
-   # *Lists* contain a map of the friendly name for each element to its value.
-   # This seems unnecessary at first, but in the future it will allow us to
-   # use identifiers in lists. Maybe for ease of use, only create a list of
-   # strings for now. Later can actual swap to accepting IDs. Build the base
-   # functionality first. Can walsy improve later.
-   # *Dicts* must have the node w/ meta information, a data node, and a children
-   # node.
-
-   # Grab first token, increment counter(s).
-
    grammar_data
    munch 'EOF'
 }
@@ -469,16 +470,14 @@ function grammar_string {
 
 
 function grammar_dict {
-   # Squiggly BRACES, square BRACKETS.
+   ((INDNT_LVL++))
+
+   mkDictionary
+   declare -n d=AST_NODE
+
    munch 'STRING'
-
-   #dname=$( Dictionary "${TOKEN[data]}" )
-   #declare -n d=$dname
-
-   #d[key]="${TOKEN[data]}"
-
    munch 'COLON' 
-   munch 'STRING'
+   grammar_data
 
    while [[ ${tPEEK1[type]} == 'COMMA' ]] ; do
       munch 'COMMA'
@@ -488,10 +487,16 @@ function grammar_dict {
    done
 
    munch 'R_BRACE'
+   ((INDNT_LVL--))
 }
 
 
 function grammar_list {
+   ((INDNT_LVL++))
+
+   mkList
+   declare -n l=AST_NODE
+
    grammar_data
 
    while [[ ${tPEEK1[type]} == 'COMMA' ]] ; do
@@ -500,9 +505,10 @@ function grammar_list {
    done
    
    munch 'R_BRACKET'
+   ((INDNT_LVL--))
 }
 
 
 lex
 parse
-print_tokens
+#print_tokens
