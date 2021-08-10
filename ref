@@ -51,6 +51,11 @@ BACKUP1="${PROGDIR}/.backup1.json"
 BACKUP2="${PROGDIR}/.backup2.json"
 BACKUP3="${PROGDIR}/.backup3.json"
 
+# Hash for caching.
+RUN_HASH=$( md5sum "$INFILE" | awk '{print $1}' )
+HASHFILE="${PROGDIR}/cache/${RUN_HASH}"
+mkdir -p "$(dirname "${HASHFILE}")"
+
 #──────────────────────────────────( lexing )───────────────────────────────────
 declare -a TOKENS=()
 declare -i GLOBAL_TOKEN_NUMBER=0 IDX=0
@@ -296,9 +301,14 @@ function raise_parse_error {
 function raise_key_error {
    local loc="[${TOKEN[lineno]}:${TOKEN[colno]}]"
    echo -n "Key Error: ${loc} "
-   echo -e "Key ${byl}${1@Q}${rst} invalid. Must be a valid 'word'."
+   echo -e "Key ${byl}${1@Q}${rst} not found."
+}
 
-   exit -3
+
+function raise_duplicate_key_error {
+   local loc="[${TOKEN[lineno]}:${TOKEN[colno]}]"
+   echo -n "Warning: ${loc} "
+   echo -e "Key ${byl}${1@Q}${rst} already used. Overwriting previous."
 }
 
 
@@ -529,9 +539,15 @@ function grammar_dict {
       munch 'COMMA'
       [[ ${tPEEK1[type]} == 'R_BRACE' ]] && break
       # Subsequent assignments.
-      munch 'STRING' ; local key=${TOKEN[data]}
+      munch 'STRING'
+      local key=${TOKEN[data]}
+
+      if [[ -n "${d[$key]}" ]] ; then
+         raise_duplicate_key_error "$key"
+      fi
+
       munch 'COLON'
-      grammar_data   ; d[$key]="$AST_NODE"
+      grammar_data ; d[$key]="$AST_NODE"
    done
 
    munch 'R_BRACE'
@@ -539,6 +555,17 @@ function grammar_dict {
    # Reset global AST pointer to this Dict node.
    AST_NODE=$node_name
 }
+
+#═══════════════════════════════════╡ CACHE ╞═══════════════════════════════════
+function cache_ast {
+   declare -i idx=1
+   while [[ $(declare -p "_NODE_${idx}" 2>/dev/null) ]] ; do
+      node_name="_NODE_${idx}"
+      declare -p ${node_name}
+      ((idx++))
+   done > "$HASHFILE"
+}
+
 
 #════════════════════════════════╡ TREEWALKERS ╞════════════════════════════════
 function get_type {
@@ -629,7 +656,12 @@ function pp_dict {
 }
 
 #══════════════════════════════════╡ ENGAGE ╞═══════════════════════════════════
+if [[ -e "$HASHFILE" ]] ; then
+   echo -e "I've already parsed that one for you."
+   echo -e "Guess I can waste my time doing it again...\n"
+fi
+
 lex
 parse
-
+cache_ast
 pretty_print
