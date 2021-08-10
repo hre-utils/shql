@@ -7,7 +7,15 @@
 #         .json lexer & parser in bash. It shall be .shon. Shell object
 #         notation.
 # todo :: 1) Change all CURRENT's to be the namerefs themselves, and give all
-#            dicts a [name] prop.
+#            dicts a [name] prop to refer to themselves. Better than needing to
+#            use a `declare -p`.
+#         2) Could probably declare a LINE_BUFFER[], which holds the contents of
+#            each line up to a $'\n', at which point it's cleared. Allow us to
+#            not need to hold the entire contents of the file in yet another
+#            array. Upon hitting an ERROR token, the message, along with the
+#            original line, are saved to props in the object.
+#         3) "Cache" each run, by dumping the generated AST to a file. Can parse
+#            from the AST if there's a matching md5sum.
 
 #══════════════════════════════════╡ GLOBAL ╞═══════════════════════════════════
 # Color garbage.
@@ -28,6 +36,8 @@ if [[ ! -e "$INFILE" ]] ; then
    exit 1
 fi
 
+# For printing better error output.
+declare -a FILE_BY_LINES
 
 # For later, doing incremental backups on each change.
 PROGDIR=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd )
@@ -52,8 +62,6 @@ declare -A FREEZE
 declare -- CURRENT PEEK BUFFER
 
 #──────────────────────────────────( parsing )──────────────────────────────────
-declare -A _ROOT=()
-
 # Same dumb nonsense here as in 11k. Starting at -1 so initial advance is to 0.
 declare -i tIDX=-1
 declare -- TOKEN tNAME tPEEK1 tPEEK2
@@ -91,6 +99,11 @@ function print_tokens {
          ${t[type]} \
          "${t[lineno]}:${t[colno]}"
    done
+}
+
+
+function indent {
+   printf -- "%$(( INDNT_LVL * INDNT_SPS ))s"  ''
 }
 
 
@@ -212,6 +225,10 @@ function lex {
       CHARRAY+=( "$c" )
    done < "$INFILE"
 
+   # TODO;XXX
+   # Creating secondary line buffer to do better debug output printing.
+   mapfile -td $'\n' FILE_BY_LINES < "$INFILE"
+
    # Iterate over array of characters. Lex into tokens.
    while [[ ${CURSOR[pos]} -lt ${#CHARRAY[@]} ]] ; do
       advance
@@ -252,6 +269,7 @@ function lex {
          identifier ; continue
       fi
 
+      # If none of the above, it's an invalid character.
       local loc="[${FREEZE[lineno]}:${FREEZE[colno]}]"
       Token 'ERROR'  "Syntax Error: $loc Invalid character ${CURRENT@Q}."
    done
@@ -340,8 +358,8 @@ function lex {
 
 function raise_parse_error {
    local loc="[${TOKEN[lineno]}:${TOKEN[colno]}]"
-   printf "Parse Error: ${loc} "
-   printf "Expected ${1}, received ${TOKEN[type]}.\n"
+   echo -n "Parse Error: ${loc} "
+   echo -e "Expected ${byl}${@}${rst}, received ${TOKEN[type]}."
 
    exit -2
 }
@@ -349,8 +367,8 @@ function raise_parse_error {
 
 function raise_key_error {
    local loc="[${TOKEN[lineno]}:${TOKEN[colno]}]"
-   printf "Key Error: ${loc} "
-   printf "Key ${1@Q} invalid. Must be a valid 'word'.\n"
+   echo -n "Key Error: ${loc} "
+   echo -e "Key ${byl}${1@Q}${rst} invalid. Must be a valid 'word'."
 
    exit -3
 }
@@ -384,47 +402,118 @@ function t_advance {
 }
 
 
-function mkDictionary {
+function mkString {
+   ((GLOBAL_AST_NUMBER++))
    local node_name="_NODE_${GLOBAL_AST_NUMBER}"
+   declare -g $node_name
 
-   declare -gA $node_name
+   declare -g  AST_NODE_NAME="$node_name"
    declare -gn AST_NODE="$node_name"
 
+   # DEBUG, print output.
+   #declare -p ${node_name}
+}
+
+
+function mkDictionary {
    ((GLOBAL_AST_NUMBER++))
+   local node_name="_NODE_${GLOBAL_AST_NUMBER}"
+   declare -gA $node_name
+
+   declare -g  AST_NODE_NAME="$node_name"
+   declare -gn AST_NODE="$node_name"
+
+   # DEBUG, print output.
+   #declare -p ${node_name}
 }
 
 
 function mkList {
+   ((GLOBAL_AST_NUMBER++))
    local node_name="_NODE_${GLOBAL_AST_NUMBER}"
-
    declare -ga $node_name
+
+   declare -g  AST_NODE_NAME="$node_name"
    declare -gn AST_NODE="$node_name"
 
-   ((GLOBAL_AST_NUMBER++))
-}
-
-
-function mkString {
-   echo -n #pass
+   # DEBUG, print output.
+   #declare -p ${node_name}
 }
 
 
 function check_lex_errors {
-   declare -a errors_found=()
+   ERROR_FOUND=false
 
+   # APPROACH #1.
+   #
+   #for tname in "${TOKENS[@]}" ; do
+   #   declare -n t="$tname"
+   #   if [[ ${t[type]} == 'ERROR' ]] ; then
+   #      ERROR_FOUND=true
+
+   #      error_line=${FILE_BY_LINES[t[lineno]-1]}
+   #      # Just a bunch of stupid `sed` and color escape garbage.
+   #      color_line=$(
+   #         sed -E "s,(.{$((t[colno]-1))})(.)(.*),\1${rd}\2${rst}\3," \
+   #         <<< "$error_line"
+   #      )
+
+   #      echo "${t[data]}"
+   #      printf "${cy}%4d |${rst} ${color_line}\n" ${t[lineno]-1]}
+   #   fi
+   #done
+
+   # APPROACH #2.
    for tname in "${TOKENS[@]}" ; do
       declare -n t="$tname"
       if [[ ${t[type]} == 'ERROR' ]] ; then
-         errors_found+=( "${t[data]}" )
+         ERROR_FOUND=true
+
+         error_line=${FILE_BY_LINES[t[lineno]-1]}
+         # Just a bunch of stupid `sed` and color escape garbage.
+         color_line=$(
+            sed -E "s,(.{$((t[colno]-1))})(.)(.*),\1${rd}\2${rst}\3," \
+            <<< "$error_line"
+         )
+
+         msg_text="${t[data]}"
+         msg_length=$(( ${#msg_text} + 2 ))
+
+         error_pos=$(( t[colno] + 7 ))
+         # Column # of the error, plus the leading "spacer" containing line
+         # number, and the '|' separator.
+
+         # Box drawing line characters that point to the offending character.
+         pointer='' ; hzsep=''
+
+         # The error is directly below the indicator, only need a pipe.
+         if [[ ${msg_length} -eq ${error_pos} ]] ; then
+            offset=$(( msg_length -1 ))
+            pointer='│'
+         # For errors that are in *front* of the initial indicator.
+         elif [[ ${msg_length} -lt ${error_pos} ]] ; then
+            offset=$(( msg_length -1 ))
+            for i in $( seq $((error_pos - msg_length -1)) ) ; do
+               hzsep+='─'
+            done
+            pointer="└${hzsep}┐"
+         # For errors *behind* the indicator.
+         elif [[ ${msg_length} -gt ${error_pos} ]] ; then
+            offset=$(( error_pos -1 ))
+            for i in $( seq $((msg_length - error_pos -1)) ) ; do
+               hzsep+='─'
+            done
+            pointer="┌${hzsep}┘"
+         fi
+
+         # Print it!
+         echo -e "${msg_text} ${cy}┐${rst}"
+         printf "%${offset}s${cy}${pointer}${rst}\n"  ''
+         printf "${cy}%4d |${rst} ${error_line}\n" ${t[lineno]-1]}
       fi
    done
 
-   if [[ ${#errors_found[@]} -gt 0 ]] ; then
-      for e in "${errors_found[@]}" ; do
-         echo "$e"
-      done
-      exit -1
-   fi
+   $ERROR_FOUND && exit -1
 }
 
 
@@ -459,56 +548,132 @@ function grammar_data {
       'STRING')      grammar_string ;;
       'L_BRACE')     grammar_dict   ;;
       'L_BRACKET')   grammar_list   ;;
-      *) raise_parse_error  ;;
+      *) raise_parse_error ;;
    esac
 }
 
 
 function grammar_string {
-   echo -n # pass
+   mkString
+   declare -n s=AST_NODE
+
+   s="${TOKEN[data]}"
 }
 
 
 function grammar_dict {
-   ((INDNT_LVL++))
-
    mkDictionary
-   declare -n d=AST_NODE
 
-   munch 'STRING'
-   munch 'COLON' 
-   grammar_data
-
+   grammar_assignment
    while [[ ${tPEEK1[type]} == 'COMMA' ]] ; do
       munch 'COMMA'
-      munch 'STRING'
-      munch 'COLON'
-      grammar_data
+      [[ ${tPEEK1[type]} == 'R_BRACE' ]] && break
+      grammar_assignment
    done
 
    munch 'R_BRACE'
-   ((INDNT_LVL--))
+}
+
+
+function grammar_assignment {
+   declare -n d=AST_NODE
+
+   munch 'STRING'
+   local key=${TOKEN[data]}
+
+   munch 'COLON'
+   grammar_data
+   d[$key]="$AST_NODE_NAME"
 }
 
 
 function grammar_list {
-   ((INDNT_LVL++))
-
    mkList
    declare -n l=AST_NODE
 
    grammar_data
+   l+=( ${AST_NODE_NAME} )
 
    while [[ ${tPEEK1[type]} == 'COMMA' ]] ; do
       munch 'COMMA'
+      [[ ${tPEEK1[type]} == 'R_BRACKET' ]] && break
       grammar_data
+      l+=( ${AST_NODE_NAME} )
    done
    
    munch 'R_BRACKET'
-   ((INDNT_LVL--))
+}
+
+#════════════════════════════════╡ TREEWALKERS ╞════════════════════════════════
+#───────────────────────────────( pretty print )────────────────────────────────
+function pretty_print {
+   print_type _NODE_1
 }
 
 
+function print_type {
+   declare node_name="$1"
+   declare node_type=$( get_type "$node_name" )
+
+   case $node_type in
+      'string')   pp_string "$node_name" ;;
+      'list')     pp_list   "$node_name" ;;
+      'dict')     pp_dict   "$node_name" ;;
+   esac
+}
+
+
+function get_type {
+   declare t=$(declare -p "$1" | awk '{print $2}')
+
+   case $t in
+      '--')    echo 'string' ;;
+      '-a')    echo 'list'   ;;
+      '-A')    echo 'dict'   ;;
+   esac
+}
+
+
+function pp_string {
+   declare node_name="$1"
+   declare -n node="$node_name"
+   echo "\"${node}\""
+}
+
+
+function pp_list {
+   declare node_name="$1"
+   declare -n node="$node_name"
+
+   echo "["
+   ((INDNT_LVL++))
+   
+   for child_name in "${node[@]}" ; do
+      echo "$(print_type ${child_name}),"
+   done
+
+   ((INDNT_LVL--))
+   echo "]"
+}
+
+
+function pp_dict {
+   echo "{"
+   ((INDNT_LVL++))
+
+   declare node_name="$1"
+   declare -n node="$node_name"
+
+   for child_key in "${!node[@]}" ; do
+      echo "\"${child_key}\": $(print_type ${node[$child_key]})"
+   done
+
+   ((INDNT_LVL--))
+   echo "}"
+}
+
+#══════════════════════════════════╡ ENGAGE ╞═══════════════════════════════════
 lex
 parse
-#print_tokens
+
+pretty_print
