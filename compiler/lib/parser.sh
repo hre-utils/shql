@@ -41,11 +41,6 @@ function raise_duplicate_key_error {
 }
 
 #───────────────────────────────────( utils )───────────────────────────────────
-function indent {
-   printf -- "%$(( INDNT_LVL * INDNT_SPS ))s"  ''
-}
-
-
 function t_advance {
    # Advance position in file, and position in line.
    ((tIDX++)) 
@@ -240,13 +235,13 @@ function grammar_list {
    declare -n l=$node_name
 
    grammar_data
-   l+=( ${AST_NODE} )
+   l+=( $AST_NODE )
 
    while [[ ${tPEEK1[type]} == 'COMMA' ]] ; do
       munch 'COMMA'
       [[ ${tPEEK1[type]} == 'R_BRACKET' ]] && break
       grammar_data
-      l+=( ${AST_NODE} )
+      l+=( $AST_NODE )
    done
    
    munch 'R_BRACKET'

@@ -22,7 +22,6 @@ declare -- CURRENT PEEK BUFFER
 declare -A KEYWORDS=(
    [insert]=true
    [update]=true
-   [modify]=true
    [delete]=true
 )
 
@@ -69,6 +68,71 @@ function Token {
    #       elements to narrow down. I don't think incrementing a number should
    #       return anything but '0'.
    return 0
+}
+
+#═══════════════════════════════════╡ LEXER ╞═══════════════════════════════════
+function lex {
+   # Fill into array, allows us to seek forwards & backwards.
+   while read -rN1 c ; do
+      CHARRAY+=( "$c" )
+   done <<< "$INPUT_STRING"
+
+   # Iterate over array of characters. Lex into tokens.
+   while [[ ${CURSOR[pos]} -lt ${#CHARRAY[@]} ]] ; do
+      advance
+      [[ -z $CURRENT ]] && break
+
+      # "Freeze" the line number and cursor number, such that they're attached
+      # to the *start* of a token, rather than the end.
+      FREEZE[lineno]=${CURSOR[lineno]}
+      FREEZE[colno]=${CURSOR[colno]}
+      FREEZE[pos]=${CURSOR[pos]}
+
+      # Skip comments.
+      if [[ "$CURRENT" == '#' ]] ; then
+         comment ; continue
+      fi
+
+      # Skip whitespace.
+      [[ "$CURRENT" =~ [[:space:]] ]] && continue
+
+      # Symbols.
+      case "$CURRENT" in
+         '.')  Token       'DOT' "$CURRENT" &&  continue ;;
+         '|')  Token      'PIPE' "$CURRENT" &&  continue ;;
+         ':')  Token     'COLON' "$CURRENT" &&  continue ;;
+         ',')  Token     'COMMA' "$CURRENT" &&  continue ;;
+         '/')  Token     'SLASH' "$CURRENT" &&  continue ;;
+         '(')  Token   'L_PAREN' "$CURRENT" &&  continue ;;
+         ')')  Token   'R_PAREN' "$CURRENT" &&  continue ;;
+         '{')  Token   'L_BRACE' "$CURRENT" &&  continue ;;
+         '}')  Token   'R_BRACE' "$CURRENT" &&  continue ;;
+         '[')  Token 'L_BRACKET' "$CURRENT" &&  continue ;;
+         ']')  Token 'R_BRACKET' "$CURRENT" &&  continue ;;
+      esac
+
+      # Strings.
+      if [[ "$CURRENT" =~ [\"\'] ]] ; then
+         string "$CURRENT" ; continue
+      fi
+
+      # Identifiers.
+      if [[ "$CURRENT" =~ [[:alpha:]_] ]] ; then
+         identifier ; continue
+      fi
+
+      # Numbers.
+      if [[ $CURRENT =~ [[:digit:]] ]] ||
+         [[ "$CURRENT" == '-' && "$PEEK" =~ [1-9] ]] ; then
+         number ; continue
+      fi
+
+      # If none of the above, it's an invalid character.
+      local loc="[${FREEZE[lineno]}:${FREEZE[colno]}]"
+      Token 'ERROR'  "Syntax Error: $loc Invalid character ${CURRENT@Q}."
+   done
+
+   Token 'EOF' 'null'
 }
 
 
@@ -150,58 +214,25 @@ function identifier {
 }
 
 
-function lex {
-   # Fill into array, allows us to seek forwards & backwards.
-   while read -rN1 c ; do
-      CHARRAY+=( "$c" )
-   done <<< "$INPUT_STRING"
+function number {
+   BUFFER="$CURRENT"
 
-   # Iterate over array of characters. Lex into tokens.
-   while [[ ${CURSOR[pos]} -lt ${#CHARRAY[@]} ]] ; do
-      advance
-      [[ -z $CURRENT ]] && break
+   local decimal=false
+   while [[ -n $CURRENT ]] ; do
+      if [[ "$PEEK" == '.' ]] ; then
+         # If we already have had a decimal point, break.
+         $decimal && break
 
-      # "Freeze" the line number and cursor number, such that they're attached
-      # to the *start* of a token, rather than the end.
-      FREEZE[lineno]=${CURSOR[lineno]}
-      FREEZE[colno]=${CURSOR[colno]}
-      FREEZE[pos]=${CURSOR[pos]}
-
-      # Skip comments.
-      if [[ "$CURRENT" == '#' ]] ; then
-         comment ; continue
+         # Else, append decimal to the number and continue.
+         decimal=true
+         advance ; BUFFER+="$CURRENT"
+      elif [[ "$PEEK" =~ [[:digit:]] ]] ; then
+         advance ; BUFFER+="$CURRENT"
+      else
+         break
       fi
-
-      # Skip whitespace.
-      [[ "$CURRENT" =~ [[:space:]] ]] && continue
-
-      # Symbols.
-      case "$CURRENT" in
-         '.')  Token       'DOT' "$CURRENT" &&  continue ;;
-         ':')  Token     'COLON' "$CURRENT" &&  continue ;;
-         ',')  Token     'COMMA' "$CURRENT" &&  continue ;;
-         '(')  Token   'L_PAREN' "$CURRENT" &&  continue ;;
-         ')')  Token   'R_PAREN' "$CURRENT" &&  continue ;;
-         '{')  Token   'L_BRACE' "$CURRENT" &&  continue ;;
-         '}')  Token   'R_BRACE' "$CURRENT" &&  continue ;;
-         '[')  Token 'L_BRACKET' "$CURRENT" &&  continue ;;
-         ']')  Token 'R_BRACKET' "$CURRENT" &&  continue ;;
-      esac
-
-      # Strings.
-      if [[ "$CURRENT" =~ [\"\'] ]] ; then
-         string "$CURRENT" ; continue
-      fi
-
-      # Identifiers.
-      if [[ "$CURRENT" =~ [[:alpha:]_] ]] ; then
-         identifier ; continue
-      fi
-
-      # If none of the above, it's an invalid character.
-      local loc="[${FREEZE[lineno]}:${FREEZE[colno]}]"
-      Token 'ERROR'  "Syntax Error: $loc Invalid character ${CURRENT@Q}."
    done
 
-   Token 'EOF' 'null'
+   # Create token.
+   Token 'NUMBER'
 }

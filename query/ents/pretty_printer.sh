@@ -1,7 +1,14 @@
 #!/bin/bash
 
 function pretty_print {
-   print_type _NODE_1
+   echo "LOCATIONS:"
+   for loc_name in "${LOCATION[@]}" ; do
+      declare -n loc=$loc_name
+      echo -n "${loc[data]} -> "
+   done
+   echo
+
+   print_data_type "${METHOD[data]}"
 }
 
 
@@ -10,7 +17,7 @@ function indent {
 }
 
 
-function print_type {
+function print_data_type {
    declare node_name="$1"
    declare node_type=$( get_type "$node_name" )
 
@@ -51,7 +58,7 @@ function pp_list {
       declare child_name="${node[$idx]}"
 
       indent
-      echo -n "$(print_type ${child_name})"
+      echo -n "$(print_data_type ${child_name})"
 
       if [[ $idx -lt $(( ${#node[@]} -1 )) ]] ; then
          echo "${HI_SURROUND},${rst} "
@@ -79,7 +86,7 @@ function pp_dict {
       ((num_keys_printed++))
       indent
       echo -n "${HI_KEY}${child_key}${rst}${HI_SURROUND}:${rst} "
-      echo -n "$(print_type ${node[$child_key]})"
+      echo -n "$(print_data_type ${node[$child_key]})"
 
       if [[ $num_keys_printed -lt $total_keys ]] ; then
          echo "${HI_COMMA},${rst} "

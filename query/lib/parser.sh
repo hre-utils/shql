@@ -4,8 +4,22 @@
 # The parsing component
 #
 # Grammar.
-#     query : PERIOD [identifier PERIOD]+ method
-#     
+#     query    -> location (PIPE method)? EOF
+#     location -> SLASH (dict_sub|list_sub)?
+#     dict_sub -> DOT IDENTIFIER
+#     list_sub -> '[' INTEGER ']'
+#     method   -> insert
+#               | update
+#               | delete 
+#     insert   -> insert '(' data ')'
+#     update   -> update '(' data ')'
+#     delete   -> '(' ')'
+#     data     -> string
+#               | list
+#               | dict
+#     string   -> '"' non-"-chars '"'
+#     list     -> '[' data (COMMA data)* (COMMA)? ']'
+#     dict     -> '{' string COLON data (COMMA string COLON data)* (COMMA)? '}'
 
 #══════════════════════════════════╡ GLOBAL ╞═══════════════════════════════════
 # Kinda dumb and hacky. Starting at (-1) so the first call to advance() will
@@ -15,9 +29,13 @@ declare -- TOKEN tNAME tPEEK1 tPEEK2
 # tNAME is the tname of the current token.
 # TOKEN is a nameref to the token itself.
 
+#───────────────────────────────────( nodes )───────────────────────────────────
 # AST generation
 declare -- AST_NODE
 declare -i GLOBAL_AST_NUMBER=0
+
+declare -a LOCATION
+declare -A METHOD
 
 #═══════════════════════════════════╡ UTILS ╞═══════════════════════════════════
 #────────────────────────────────( exceptions )─────────────────────────────────
@@ -128,6 +146,28 @@ function check_lex_errors {
 }
 
 #═════════════════════════════════╡ AST NODES ╞═════════════════════════════════
+function mkDictSub {
+   ((GLOBAL_AST_NUMBER++))
+   local node_name="_NODE_${GLOBAL_AST_NUMBER}"
+   declare -gA $node_name
+   declare -g AST_NODE="$node_name"
+
+   # DEBUG, print output.
+   #declare -p ${node_name}
+}
+
+
+function mkListSub {
+   ((GLOBAL_AST_NUMBER++))
+   local node_name="_NODE_${GLOBAL_AST_NUMBER}"
+   declare -gA $node_name
+   declare -g AST_NODE="$node_name"
+
+   # DEBUG, print output.
+   #declare -p ${node_name}
+}
+
+
 function mkString {
    ((GLOBAL_AST_NUMBER++))
    local node_name="_NODE_${GLOBAL_AST_NUMBER}"
@@ -160,12 +200,11 @@ function mkDictionary {
    #declare -p ${node_name}
 }
 
-
 #══════════════════════════════════╡ PARSER ╞═══════════════════════════════════
 function parse {
    check_lex_errors
 
-   grammar_data
+   grammar_query
    munch 'EOF'
 }
 
@@ -184,7 +223,90 @@ function munch {
    $found || raise_parse_error "${expected[@]}"
 }
 
-#──────────────────────────────────( grammar )──────────────────────────────────
+
+function grammar_query {
+   grammar_location
+
+   if [[ "${tPEEK1[type]}" == 'PIPE' ]] ; then
+      munch 'PIPE'
+      grammar_method
+   fi
+}
+
+
+function grammar_location {
+   munch 'SLASH'
+
+   if [[ "${tPEEK1[type]}" == 'R_BRACKET' ]] ; then
+      grammar_list_sub
+      LOCATION+=( $AST_NODE )
+   elif [[ "${tPEEK1[type]}" == 'IDENTIFIER' ]] ; then
+      grammar_dict_sub
+      LOCATION+=( $AST_NODE )
+   fi
+
+   while [[ "${tPEEK1[type]}" == 'DOT' ]] ||
+         [[ "${tPEEK1[type]}" == 'L_BRACKET' ]] ; do
+      munch 'DOT,L_BRACKET'
+
+      if [[ "${TOKEN[type]}" == 'R_BRACKET' ]] ; then
+         grammar_list_sub
+         LOCATION+=( $AST_NODE )
+      elif [[ "${TOKEN[type]}" == 'DOT' ]] ; then
+         grammar_dict_sub
+         LOCATION+=( $AST_NODE )
+      fi
+   done
+}
+
+
+function grammar_dict_sub {
+   mkDictSub
+   declare -- node_name=$AST_NODE
+   declare -n d=$node_name
+
+   munch 'IDENTIFIER'
+   d[type]='dict_sub'
+   d[data]="${TOKEN[data]}"
+
+   AST_NODE=$node_name
+}
+
+
+function grammar_list_sub {
+   mkListSub
+   declare -- node_name=$AST_NODE
+   declare -n d=$node_name
+
+   munch 'INTEGER'
+   d[type]='list_sub'
+   d[data]=$AST_NODE
+
+   munch 'R_BRACKET'
+   AST_NODE=$node_name
+}
+
+
+function grammar_method {
+   declare -- node_name=$AST_NODE
+
+   # TODO: Haven't really yet thought through how I want to make these objects
+   #       per se. Still thinking about it.
+   munch 'KEYWORD'
+   ktype=${TOKEN[data]}
+
+   munch 'L_PAREN'
+   if [[ $ktype =~ (insert|update) ]] ; then
+      grammar_data
+      METHOD[data]=$AST_NODE
+   fi
+   munch 'R_PAREN'
+
+   METHOD[type]=$ktype
+   AST_NODE=$node_name
+}
+
+
 function grammar_data {
    munch 'STRING,L_BRACE,L_BRACKET'
 
@@ -218,13 +340,13 @@ function grammar_list {
    declare -n l=$node_name
 
    grammar_data
-   l+=( ${AST_NODE} )
+   l+=( $AST_NODE )
 
    while [[ ${tPEEK1[type]} == 'COMMA' ]] ; do
       munch 'COMMA'
       [[ ${tPEEK1[type]} == 'R_BRACKET' ]] && break
       grammar_data
-      l+=( ${AST_NODE} )
+      l+=( $AST_NODE )
    done
    
    munch 'R_BRACKET'
@@ -268,12 +390,4 @@ function grammar_dict {
    AST_NODE=$node_name
 }
 
-#═══════════════════════════════════╡ CACHE ╞═══════════════════════════════════
-function cache_ast {
-   declare -i idx=1
-   while [[ $(declare -p "_NODE_${idx}" 2>/dev/null) ]] ; do
-      node_name="_NODE_${idx}"
-      declare -p ${node_name}
-      ((idx++))
-   done > "$HASHFILE"
-}
+#──────────────────────────────────( grammar )──────────────────────────────────

@@ -33,10 +33,15 @@ declare -A colormap=(
 )
 
 #────────────────────────────────────( go )─────────────────────────────────────
-source "${PROGDIR}/lib/lexer.sh"
-source "${PROGDIR}/config.sh"
+for f in "${PROGDIR}"/lib/* ; do
+   source "$f"
+done
+source "${PROGDIR}"/ents/pretty_printer.sh
+source "${PROGDIR}"/config.sh
 
 read -p 'query> ' INPUT_STRING
 
 lex
-print_tokens
+parse
+
+pretty_print
