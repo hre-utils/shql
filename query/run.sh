@@ -34,6 +34,8 @@ declare -A colormap=(
 
 #────────────────────────────────────( go )─────────────────────────────────────
 source "${PROGDIR}/lib/lexer.sh"
+source "${PROGDIR}/config.sh"
+
 read -p 'query> ' INPUT_STRING
 
 lex
