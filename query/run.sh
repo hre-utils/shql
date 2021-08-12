@@ -1,6 +1,24 @@
 #!/bin/bash
 
-declare -g PROGDIR=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd )
+PROGDIR=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd )
+INFILE="$1"
+if [[ ! -e "$INFILE" ]] ; then
+   echo "Input file required."
+   exit -4
+fi
+
+FILE_HASH=$( md5sum "$INFILE" )
+FILE_HASH=${FILE_HASH%% *}
+
+COMPILEDIR="$( dirname "$PROGDIR" )/compiler"
+PARSEFILE="${COMPILEDIR}/cache/${FILE_HASH}"
+
+if [[ ! -e "$PARSEFILE" ]] ; then
+   echo "Input file has not been parsed."
+   exit -5
+fi
+
+source "$PARSEFILE"
 
 #══════════════════════════════════╡ GLOBAL ╞═══════════════════════════════════
 # Color garbage.
@@ -36,7 +54,7 @@ declare -A colormap=(
 for f in "${PROGDIR}"/lib/* ; do
    source "$f"
 done
-source "${PROGDIR}"/ents/pretty_printer.sh
+source "${PROGDIR}"/ents/interpreter.sh
 source "${PROGDIR}"/config.sh
 
 read -p 'query> ' INPUT_STRING
@@ -44,4 +62,4 @@ read -p 'query> ' INPUT_STRING
 lex
 parse
 
-pretty_print
+interpret

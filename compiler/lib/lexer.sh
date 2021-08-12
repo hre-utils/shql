@@ -19,6 +19,20 @@ declare -A CURSOR=(
 declare -A FREEZE
 declare -- CURRENT PEEK BUFFER
 
+declare -A colormap=(
+   [DOT]="$yl"
+   [COLON]="$wh"
+   [COMMA]="$wh"
+   [STRING]="$rd"
+   [NUMBER]="$bl"
+   [COMMENT]="$cy"
+   [L_BRACE]="$wh"
+   [R_BRACE]="$wh"
+   [L_BRACKET]="$wh"
+   [R_BRACKET]="$wh"
+   [EOF]="$gr"
+)
+
 #═══════════════════════════════════╡ UTILS ╞═══════════════════════════════════
 function print_tokens {
    for tname in "${TOKENS[@]}" ; do

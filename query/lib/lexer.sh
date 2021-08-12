@@ -99,10 +99,10 @@ function lex {
       # Symbols.
       case "$CURRENT" in
          '.')  Token       'DOT' "$CURRENT" &&  continue ;;
-         '|')  Token      'PIPE' "$CURRENT" &&  continue ;;
          ':')  Token     'COLON' "$CURRENT" &&  continue ;;
          ',')  Token     'COMMA' "$CURRENT" &&  continue ;;
          '/')  Token     'SLASH' "$CURRENT" &&  continue ;;
+         '>')  Token   'GREATER' "$CURRENT" &&  continue ;;
          '(')  Token   'L_PAREN' "$CURRENT" &&  continue ;;
          ')')  Token   'R_PAREN' "$CURRENT" &&  continue ;;
          '{')  Token   'L_BRACE' "$CURRENT" &&  continue ;;
@@ -123,7 +123,7 @@ function lex {
 
       # Numbers.
       if [[ $CURRENT =~ [[:digit:]] ]] ||
-         [[ "$CURRENT" == '-' && "$PEEK" =~ [1-9] ]] ; then
+         [[ $CURRENT == '-' && $PEEK == [[:digit:]] ]] ; then
          number ; continue
       fi
 
@@ -217,16 +217,8 @@ function identifier {
 function number {
    BUFFER="$CURRENT"
 
-   local decimal=false
    while [[ -n $CURRENT ]] ; do
-      if [[ "$PEEK" == '.' ]] ; then
-         # If we already have had a decimal point, break.
-         $decimal && break
-
-         # Else, append decimal to the number and continue.
-         decimal=true
-         advance ; BUFFER+="$CURRENT"
-      elif [[ "$PEEK" =~ [[:digit:]] ]] ; then
+      if [[ "$PEEK" =~ [[:digit:]] ]] ; then
          advance ; BUFFER+="$CURRENT"
       else
          break
@@ -234,5 +226,5 @@ function number {
    done
 
    # Create token.
-   Token 'NUMBER'
+   Token 'INTEGER'
 }

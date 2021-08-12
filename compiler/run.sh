@@ -38,9 +38,9 @@ declare -a FILE_BY_LINES
 
 # For later, doing incremental backups on each database change.
 PROGDIR=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd )
-BACKUP1="${PROGDIR}/.backup1.json"
-BACKUP2="${PROGDIR}/.backup2.json"
-BACKUP3="${PROGDIR}/.backup3.json"
+#BACKUP1="${PROGDIR}/.backup1.json"
+#BACKUP2="${PROGDIR}/.backup2.json"
+#BACKUP3="${PROGDIR}/.backup3.json"
 
 # Hash for caching.
 RUN_HASH=$( md5sum "$INFILE" )
@@ -48,21 +48,6 @@ RUN_HASH=${RUN_HASH%% *}
 HASHFILE="${PROGDIR}/cache/${RUN_HASH}"
 mkdir -p "$(dirname "${HASHFILE}")"
 
-declare -A colormap=(
-   [DOT]="$yl"
-   [COLON]="$wh"
-   [COMMA]="$wh"
-   [STRING]="$rd"
-   [NUMBER]="$bl"
-   [COMMENT]="$cy"
-   [L_BRACE]="$wh"
-   [R_BRACE]="$wh"
-   [L_BRACKET]="$wh"
-   [R_BRACKET]="$wh"
-   [EOF]="$gr"
-)
-
-#───────────────────────────────( dependencies )────────────────────────────────
 for f in "${PROGDIR}"/lib/* ; do
    source "$f"
 done
@@ -70,14 +55,10 @@ done
 source "${PROGDIR}/ents/pretty_printer.sh"
 source "${PROGDIR}/config.sh"
 
-#───────────────────────────────────( cache )───────────────────────────────────
-if [[ -e "$HASHFILE" ]] ; then
-   echo -e "${yl}> I've already parsed that one for you.${rst}"
-   echo -e "${yl}> Guess I can waste my time doing it again...${rst}\n"
-fi
+# Cached?
+[[ -e "$HASHFILE" ]] && exit 0
 
-#────────────────────────────────────( go )─────────────────────────────────────
+# Compile.
 lex
 parse
 cache_ast
-pretty_print

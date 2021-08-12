@@ -12,9 +12,16 @@ declare -- TOKEN tNAME tPEEK1 tPEEK2
 # TOKEN is a nameref to the token itself.
 
 # AST generation
-declare -- AST_NODE
+declare -A __meta__
+declare -- _ROOT AST_NODE
 declare -i GLOBAL_AST_NUMBER=0
 
+#───────────────────────────────( required vars )───────────────────────────────
+# Other variables used here, globally scoped, assumed to have been sourced from
+# the lexer, or run.sh:
+#  TOKENS[]
+#  FILE_BY_LINES  
+#  HASHFILE
 
 #═══════════════════════════════════╡ UTILS ╞═══════════════════════════════════
 #────────────────────────────────( exceptions )─────────────────────────────────
@@ -72,26 +79,6 @@ function t_advance {
 function check_lex_errors {
    ERROR_FOUND=false
 
-   # APPROACH #1.
-   #
-   #for tname in "${TOKENS[@]}" ; do
-   #   declare -n t="$tname"
-   #   if [[ ${t[type]} == 'ERROR' ]] ; then
-   #      ERROR_FOUND=true
-
-   #      error_line=${FILE_BY_LINES[t[lineno]-1]}
-   #      # Just a bunch of stupid `sed` and color escape garbage.
-   #      color_line=$(
-   #         sed -E "s,(.{$((t[colno]-1))})(.)(.*),\1${rd}\2${rst}\3," \
-   #         <<< "$error_line"
-   #      )
-
-   #      echo "${t[data]}"
-   #      printf "${cy}%4d |${rst} ${color_line}\n" ${t[lineno]-1]}
-   #   fi
-   #done
-
-   # APPROACH #2.
    for tname in "${TOKENS[@]}" ; do
       declare -n t="$tname"
       if [[ ${t[type]} == 'ERROR' ]] ; then
@@ -107,9 +94,9 @@ function check_lex_errors {
          msg_text="${t[data]}"
          msg_length=$(( ${#msg_text} + 2 ))
 
-         error_pos=$(( t[colno] + 7 ))
          # Column # of the error, plus the leading "spacer" containing line
          # number, and the '|' separator.
+         error_pos=$(( t[colno] + 7 ))
 
          # Box drawing line characters that point to the offending character.
          pointer='' ; hzsep=''
@@ -183,6 +170,8 @@ function parse {
    check_lex_errors
 
    grammar_data
+   _ROOT=$AST_NODE
+
    munch 'EOF'
 }
 
@@ -223,9 +212,6 @@ function grammar_string {
 
    # Reset global AST pointer to this String node.
    AST_NODE=$node_name
-
-   # DEBUG
-   #echo "STRING(${AST_NODE} -> $s)"
 }
 
 
@@ -248,9 +234,6 @@ function grammar_list {
 
    # Reset global AST pointer to this List node.
    AST_NODE=$node_name
-
-   # DEBUG
-   #echo "$(declare -p l) -> LIST(${l[@]})"
 }
 
 
@@ -287,10 +270,13 @@ function grammar_dict {
 
 #═══════════════════════════════════╡ CACHE ╞═══════════════════════════════════
 function cache_ast {
+   __meta__[max_node_ref]=$GLOBAL_AST_NUMBER
+   declare -p __meta__ > "$HASHFILE"
+   declare -p _ROOT >> "$HASHFILE"
+
    declare -i idx=1
-   while [[ $(declare -p "_NODE_${idx}" 2>/dev/null) ]] ; do
-      node_name="_NODE_${idx}"
-      declare -p ${node_name}
+   while [[ $idx -le $GLOBAL_AST_NUMBER ]] ; do
+      declare -p "_NODE_${idx}"
       ((idx++))
-   done > "$HASHFILE"
+   done >> "$HASHFILE"
 }

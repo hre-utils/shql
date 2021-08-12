@@ -4,7 +4,7 @@
 # The parsing component
 #
 # Grammar.
-#     query    -> location (PIPE method)? EOF
+#     query    -> location (GREATER method)? EOF
 #     location -> SLASH (dict_sub|list_sub)?
 #     dict_sub -> DOT IDENTIFIER
 #     list_sub -> '[' INTEGER ']'
@@ -45,13 +45,6 @@ function raise_parse_error {
    echo -e "Expected ${byl}${@}${rst}, received ${TOKEN[type]}."
 
    exit -2
-}
-
-
-function raise_key_error {
-   local loc="[${TOKEN[lineno]}:${TOKEN[colno]}]"
-   echo -n "Key Error: ${loc} "
-   echo -e "Key ${byl}${1@Q}${rst} not found."
 }
 
 
@@ -148,7 +141,7 @@ function check_lex_errors {
 #═════════════════════════════════╡ AST NODES ╞═════════════════════════════════
 function mkDictSub {
    ((GLOBAL_AST_NUMBER++))
-   local node_name="_NODE_${GLOBAL_AST_NUMBER}"
+   local node_name="_QUERY_NODE_${GLOBAL_AST_NUMBER}"
    declare -gA $node_name
    declare -g AST_NODE="$node_name"
 
@@ -159,7 +152,7 @@ function mkDictSub {
 
 function mkListSub {
    ((GLOBAL_AST_NUMBER++))
-   local node_name="_NODE_${GLOBAL_AST_NUMBER}"
+   local node_name="_QUERY_NODE_${GLOBAL_AST_NUMBER}"
    declare -gA $node_name
    declare -g AST_NODE="$node_name"
 
@@ -170,7 +163,7 @@ function mkListSub {
 
 function mkString {
    ((GLOBAL_AST_NUMBER++))
-   local node_name="_NODE_${GLOBAL_AST_NUMBER}"
+   local node_name="_QUERY_NODE_${GLOBAL_AST_NUMBER}"
    declare -g $node_name
    declare -g AST_NODE="$node_name"
 
@@ -181,7 +174,7 @@ function mkString {
 
 function mkList {
    ((GLOBAL_AST_NUMBER++))
-   local node_name="_NODE_${GLOBAL_AST_NUMBER}"
+   local node_name="_QUERY_NODE_${GLOBAL_AST_NUMBER}"
    declare -ga $node_name
    declare -g AST_NODE="$node_name"
 
@@ -192,7 +185,7 @@ function mkList {
 
 function mkDictionary {
    ((GLOBAL_AST_NUMBER++))
-   local node_name="_NODE_${GLOBAL_AST_NUMBER}"
+   local node_name="_QUERY_NODE_${GLOBAL_AST_NUMBER}"
    declare -gA $node_name
    declare -g AST_NODE="$node_name"
 
@@ -227,8 +220,8 @@ function munch {
 function grammar_query {
    grammar_location
 
-   if [[ "${tPEEK1[type]}" == 'PIPE' ]] ; then
-      munch 'PIPE'
+   if [[ "${tPEEK1[type]}" == 'GREATER' ]] ; then
+      munch 'GREATER'
       grammar_method
    fi
 }
@@ -237,7 +230,8 @@ function grammar_query {
 function grammar_location {
    munch 'SLASH'
 
-   if [[ "${tPEEK1[type]}" == 'R_BRACKET' ]] ; then
+   if [[ "${tPEEK1[type]}" == 'L_BRACKET' ]] ; then
+      munch 'L_BRACKET'
       grammar_list_sub
       LOCATION+=( $AST_NODE )
    elif [[ "${tPEEK1[type]}" == 'IDENTIFIER' ]] ; then
@@ -249,7 +243,7 @@ function grammar_location {
          [[ "${tPEEK1[type]}" == 'L_BRACKET' ]] ; do
       munch 'DOT,L_BRACKET'
 
-      if [[ "${TOKEN[type]}" == 'R_BRACKET' ]] ; then
+      if [[ "${TOKEN[type]}" == 'L_BRACKET' ]] ; then
          grammar_list_sub
          LOCATION+=( $AST_NODE )
       elif [[ "${TOKEN[type]}" == 'DOT' ]] ; then
@@ -266,7 +260,7 @@ function grammar_dict_sub {
    declare -n d=$node_name
 
    munch 'IDENTIFIER'
-   d[type]='dict_sub'
+   d[type]='dict'
    d[data]="${TOKEN[data]}"
 
    AST_NODE=$node_name
@@ -279,8 +273,8 @@ function grammar_list_sub {
    declare -n d=$node_name
 
    munch 'INTEGER'
-   d[type]='list_sub'
-   d[data]=$AST_NODE
+   d[type]='list'
+   d[data]=${TOKEN[data]}
 
    munch 'R_BRACKET'
    AST_NODE=$node_name
