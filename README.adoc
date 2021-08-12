@@ -1,5 +1,19 @@
-= ref
+= shql
 
+baSH Query Language
+
+== Preface
+This project started out as described below in the _Thinkies_ section:
+a multi-functional log tracking, config file managing, application tracking utility.
+To make that work, I'd need an easy text-based database.
+JSON is the obvious choice.
+It's editable in any editor, parsable with CLI utilities (`grep`, `sed`, `awk`), and easy to read.
+
+Initially I was looking at `jq`.
+It seemed easy to use, and already existed.
+However, it's an additional dependency, and it's not written in the Lords most venerable language--Bash.
+
+This is unacceptable.
 
 == Thinkies
 json based database for 'log', instead of a flat text file

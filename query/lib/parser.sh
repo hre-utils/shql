@@ -4,38 +4,52 @@
 # The parsing component
 #
 # Grammar.
-#     query    -> location (GREATER method)? EOF
-#     location -> SLASH (dict_sub|list_sub)?
-#     dict_sub -> DOT IDENTIFIER
-#     list_sub -> '[' INTEGER ']'
-#     method   -> insert
-#               | update
-#               | delete 
-#     insert   -> insert '(' data ')'
-#     update   -> update '(' data ')'
-#     delete   -> '(' ')'
-#     data     -> string
-#               | list
-#               | dict
-#     string   -> '"' non-"-chars '"'
-#     list     -> '[' data (COMMA data)* (COMMA)? ']'
-#     dict     -> '{' string COLON data (COMMA string COLON data)* (COMMA)? '}'
+#     query       -> transaction (COMMA transaction)* EOF
+#     transaction -> location GREATER method
+#     location    -> SLASH (dict_sub|list_sub)?
+#     dict_sub    -> DOT IDENTIFIER
+#     list_sub    -> '[' INTEGER ']'
+#     method      -> insert
+#                  | update
+#                  | delete
+#     insert      -> insert '(' data ')'
+#     update      -> update '(' data ')'
+#     delete      -> '(' ')'
+#     data        -> string
+#                  | list
+#                  | dict
+#     string      -> '"' non-"-chars '"'
+#     list        -> '[' data (COMMA data)* (COMMA)? ']'
+#     dict        -> '{' string COLON data (COMMA string COLON data)* (COMMA)? '}'
+#
+#
+# TRANSACTION = [                global list
+#     transaction = {            transaction node object
+#        location: [             location node list
+#           loc1,                location node part
+#           loc2
+#        ],
+#        method: 'method'        method node
+#     },
+#     transaction = {
+#        location: [],
+#        method: 'method'
+#     }
+# ]
 
 #══════════════════════════════════╡ GLOBAL ╞═══════════════════════════════════
 # Kinda dumb and hacky. Starting at (-1) so the first call to advance() will
 # increment by 1, thus reading the *next* character, the first.
-declare -i tIDX=-1
-declare -- TOKEN tNAME tPEEK1 tPEEK2
-# tNAME is the tname of the current token.
+declare -i IDX=-1
+declare -- TOKEN TOKEN_NAME PEEK1 PEEK2
+# TOKEN_NAME is the tname of the current token.
 # TOKEN is a nameref to the token itself.
 
 #───────────────────────────────────( nodes )───────────────────────────────────
 # AST generation
+declare -a TRANSACTION
 declare -- AST_NODE
 declare -i GLOBAL_AST_NUMBER=0
-
-declare -a LOCATION
-declare -A METHOD
 
 #═══════════════════════════════════╡ UTILS ╞═══════════════════════════════════
 #────────────────────────────────( exceptions )─────────────────────────────────
@@ -57,28 +71,28 @@ function raise_duplicate_key_error {
 #───────────────────────────────────( utils )───────────────────────────────────
 function t_advance {
    # Advance position in file, and position in line.
-   ((tIDX++)) 
+   ((IDX++))
 
    TOKEN=
-   tNAME=
-   tPEEK1=
-   tPEEK2=
+   TOKEN_NAME=
+   PEEK1=
+   PEEK2=
 
-   if [[ ${tIDX} -lt ${#TOKENS[@]} ]] ; then
-      tNAME=${TOKENS[tIDX]}
-      declare -gn TOKEN=${tNAME}
+   if [[ ${IDX} -lt ${#TOKENS[@]} ]] ; then
+      TOKEN_NAME=${TOKENS[IDX]}
+      declare -gn TOKEN=${TOKEN_NAME}
    fi
 
    # Lookahead +1.
-   if [[ ${tIDX} -lt $((${#TOKENS[@]}-1)) ]] ; then
-      declare t1=${TOKENS[tIDX+1]}
-      declare -gn tPEEK1=$t1
+   if [[ ${IDX} -lt $((${#TOKENS[@]}-1)) ]] ; then
+      declare t1=${TOKENS[IDX+1]}
+      declare -gn PEEK1=$t1
    fi
 
    # Lookahead +2.
-   if [[ ${tIDX} -lt $((${#TOKENS[@]}-2)) ]] ; then
-      declare t2=${TOKENS[tIDX+2]}
-      declare -gn tPEEK2=$t2
+   if [[ ${IDX} -lt $((${#TOKENS[@]}-2)) ]] ; then
+      declare t2=${TOKENS[IDX+2]}
+      declare -gn PEEK2=$t2
    fi
 }
 
@@ -139,14 +153,43 @@ function check_lex_errors {
 }
 
 #═════════════════════════════════╡ AST NODES ╞═════════════════════════════════
+function mkTransaction {
+   ((GLOBAL_AST_NUMBER++))
+   local node_name="_QUERY_NODE_${GLOBAL_AST_NUMBER}"
+   declare -gA $node_name
+   declare -g AST_NODE="$node_name"
+
+   declare -n n=$node_name
+   n[location]=
+   n[method]=
+}
+
+
+function mkLocation {
+   ((GLOBAL_AST_NUMBER++))
+   local node_name="_QUERY_NODE_${GLOBAL_AST_NUMBER}"
+   declare -ga $node_name
+   declare -g AST_NODE="$node_name"
+}
+
+
+function mkMethod {
+   ((GLOBAL_AST_NUMBER++))
+   local node_name="_QUERY_NODE_${GLOBAL_AST_NUMBER}"
+   declare -g $node_name
+   declare -g AST_NODE="$node_name"
+}
+
+
 function mkDictSub {
    ((GLOBAL_AST_NUMBER++))
    local node_name="_QUERY_NODE_${GLOBAL_AST_NUMBER}"
    declare -gA $node_name
    declare -g AST_NODE="$node_name"
 
-   # DEBUG, print output.
-   #declare -p ${node_name}
+   declare -n n=$node_name
+   n[type]=
+   n[data]=
 }
 
 
@@ -156,8 +199,9 @@ function mkListSub {
    declare -gA $node_name
    declare -g AST_NODE="$node_name"
 
-   # DEBUG, print output.
-   #declare -p ${node_name}
+   declare -n n=$node_name
+   n[type]=
+   n[data]=
 }
 
 
@@ -166,9 +210,6 @@ function mkString {
    local node_name="_QUERY_NODE_${GLOBAL_AST_NUMBER}"
    declare -g $node_name
    declare -g AST_NODE="$node_name"
-
-   # DEBUG, print output.
-   #declare -p ${node_name}
 }
 
 
@@ -177,9 +218,6 @@ function mkList {
    local node_name="_QUERY_NODE_${GLOBAL_AST_NUMBER}"
    declare -ga $node_name
    declare -g AST_NODE="$node_name"
-
-   # DEBUG, print output.
-   #declare -p ${node_name}
 }
 
 
@@ -188,9 +226,6 @@ function mkDictionary {
    local node_name="_QUERY_NODE_${GLOBAL_AST_NUMBER}"
    declare -gA $node_name
    declare -g AST_NODE="$node_name"
-
-   # DEBUG, print output.
-   #declare -p ${node_name}
 }
 
 #══════════════════════════════════╡ PARSER ╞═══════════════════════════════════
@@ -210,7 +245,7 @@ function munch {
    for exp in "${expected[@]}" ; do
       if [[ ${TOKEN[type]} == $exp ]] ; then
          found=true ; break
-      fi 
+      fi
    done
 
    $found || raise_parse_error "${expected[@]}"
@@ -218,39 +253,63 @@ function munch {
 
 
 function grammar_query {
-   grammar_location
+   grammar_transaction
+   TRANSACTION+=( $AST_NODE )
 
-   if [[ "${tPEEK1[type]}" == 'GREATER' ]] ; then
-      munch 'GREATER'
-      grammar_method
-   fi
+   while [[ ${PEEK1[type]} == 'COMMA' ]] ; do
+      munch 'COMMA'
+      grammar_transaction
+      TRANSACTION+=( $AST_NODE )
+   done
+}
+
+
+function grammar_transaction {
+   mkTransaction
+   declare -- node_name=$AST_NODE
+   declare -n t=$node_name
+
+   grammar_location
+   t[location]=$AST_NODE
+
+   munch 'GREATER'
+   grammar_method
+   t[method]=$AST_NODE
+
+   AST_NODE=$node_name
 }
 
 
 function grammar_location {
+   mkLocation
+   declare -- node_name=$AST_NODE
+   declare -n l=$node_name
+
    munch 'SLASH'
 
-   if [[ "${tPEEK1[type]}" == 'L_BRACKET' ]] ; then
+   if [[ "${PEEK1[type]}" == 'L_BRACKET' ]] ; then
       munch 'L_BRACKET'
       grammar_list_sub
-      LOCATION+=( $AST_NODE )
-   elif [[ "${tPEEK1[type]}" == 'IDENTIFIER' ]] ; then
+      l+=( $AST_NODE )
+   elif [[ "${PEEK1[type]}" == 'IDENTIFIER' ]] ; then
       grammar_dict_sub
-      LOCATION+=( $AST_NODE )
+      l+=( $AST_NODE )
    fi
 
-   while [[ "${tPEEK1[type]}" == 'DOT' ]] ||
-         [[ "${tPEEK1[type]}" == 'L_BRACKET' ]] ; do
+   while [[ "${PEEK1[type]}" == 'DOT' ]] ||
+         [[ "${PEEK1[type]}" == 'L_BRACKET' ]] ; do
       munch 'DOT,L_BRACKET'
 
       if [[ "${TOKEN[type]}" == 'L_BRACKET' ]] ; then
          grammar_list_sub
-         LOCATION+=( $AST_NODE )
+         l+=( $AST_NODE )
       elif [[ "${TOKEN[type]}" == 'DOT' ]] ; then
          grammar_dict_sub
-         LOCATION+=( $AST_NODE )
+         l+=( $AST_NODE )
       fi
    done
+
+   AST_NODE=$node_name
 }
 
 
@@ -282,7 +341,9 @@ function grammar_list_sub {
 
 
 function grammar_method {
+   mkMethod
    declare -- node_name=$AST_NODE
+   declare -n m=$node_name
 
    # TODO: Haven't really yet thought through how I want to make these objects
    #       per se. Still thinking about it.
@@ -292,11 +353,11 @@ function grammar_method {
    munch 'L_PAREN'
    if [[ $ktype =~ (insert|update) ]] ; then
       grammar_data
-      METHOD[data]=$AST_NODE
+      m[data]=$AST_NODE
    fi
    munch 'R_PAREN'
 
-   METHOD[type]=$ktype
+   m[type]=$ktype
    AST_NODE=$node_name
 }
 
@@ -336,13 +397,13 @@ function grammar_list {
    grammar_data
    l+=( $AST_NODE )
 
-   while [[ ${tPEEK1[type]} == 'COMMA' ]] ; do
+   while [[ ${PEEK1[type]} == 'COMMA' ]] ; do
       munch 'COMMA'
-      [[ ${tPEEK1[type]} == 'R_BRACKET' ]] && break
+      [[ ${PEEK1[type]} == 'R_BRACKET' ]] && break
       grammar_data
       l+=( $AST_NODE )
    done
-   
+
    munch 'R_BRACKET'
 
    # Reset global AST pointer to this List node.
@@ -363,9 +424,9 @@ function grammar_dict {
    munch 'COLON'
    grammar_data   ; d[$key]="$AST_NODE"
 
-   while [[ ${tPEEK1[type]} == 'COMMA' ]] ; do
+   while [[ ${PEEK1[type]} == 'COMMA' ]] ; do
       munch 'COMMA'
-      [[ ${tPEEK1[type]} == 'R_BRACE' ]] && break
+      [[ ${PEEK1[type]} == 'R_BRACE' ]] && break
       # Subsequent assignments.
       munch 'STRING'
       local key=${TOKEN[data]}

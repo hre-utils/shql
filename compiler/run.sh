@@ -62,3 +62,5 @@ source "${PROGDIR}/config.sh"
 lex
 parse
 cache_ast
+
+#pretty_print

@@ -1,24 +1,22 @@
 #!/bin/bash
 
 # Initial node
-NODE_NAME=_NODE_1
-NODE_PREV=
+NODE_NAME=$_ROOT
+NODE_PREV=$_ROOT
 
-# TODO
-# I wonder if it would help to also include with the cache a section of meta
-# information, to make insertions into the existing data easier. Right now we
-# can easily distinguish between original data (prefixed by _NODE_) and query
-# data (prefixed by _QUERY_NODE_). However what if we perform an insertion, then
-# wish to insert a *second* value. The same _QUERY_NODE_ name will be used.
-# When written, must swap all _QUERY_NODE(s) to _NODE(s). Having meta information
-# such as "what is that files max(GLOBAL_NODE_COUNTER)" would allow us to simply
-# iterate through all _QUERY_ nodes, and replace them with _NODES_ beginning at
-# the previous max. Each insert or modify operation will utilize this. We cannot
-# rely on nodes within the data having a sequential number, as intermediate ones
-# may be deleted.
+LOCATION_LIST=    # This transactions location list.
+LOCATION=$_ROOT   # Current location within the list.
+METHOD=
+
+# CURRENT
+# Struggling on a good method to delete the children of an object, but also the
+# reference to it from it's parent. We need to hang onto the path to our current
+# location, as well as the references to get there.
+# Maybe setting a CURRENT_PATH[], then in `intr_get_location()` append the route
+# taken. Will need to come up with a better way to handle the _ROOT node though.
+# I think.
 #
-# Allow for multiple statements on a line. For example:
-#  query>  /here[0] > delete(), / > print(), / > write()
+# Try to write a new function that uses this approach.
 
 #────────────────────────────────( exceptions )─────────────────────────────────
 function raise_key_error {
@@ -41,32 +39,41 @@ function raise_type_error {
    exit -9
 }
 
-
-
-
 #════════════════════════════════╡ INTERPRETER ╞════════════════════════════════
 function interpret {
-   case "${METHOD[type]}" in
+   for transaction_node_name in "${TRANSACTION[@]}" ; do
+      declare -n transaction=$transaction_node_name
+      LOCATION=${transaction[location]}
+      METHOD=${transaction[method]}
+      intr_method_map
+   done
+
+}
+
+
+function intr_method_map {
+   declare -n method=$METHOD
+   case "${method[type]}" in
+      'print')    intr_print  ;;
+      'write')    intr_write  ;;
       'insert')   intr_insert ;;
       'update')   intr_update ;;
       'delete')   intr_delete ;;
-      '')         intr_print  ;;
    esac
 }
 
 
 function intr_get_location {
-   # TODO:
-   # I don't like how this uses a global NODE_NAME. It is done because we cannot
-   # raise exceptions in a subshell. The subshell's `exit` statement will only
-   # exit that fork.
-   for loc_name in "${LOCATION[@]}" ; do
-      # Tracking the previously set node, allowing us to perform deletions or
-      # insertions on the node referring TO this one.
-      NODE_PREV=$NODE_NAME
+   declare -n location=$LOCATION_LIST
 
+   for loc_name in "${location[@]}" ; do
       declare -n loc=$loc_name
       declare -n node=$NODE_NAME
+
+      # Tracking the current location within the AST. This allows us to refer
+      # from the parent to this node.
+      LOCATION=$loc_name
+      NODE_PREV=$NODE_NAME
 
       # Validation: type errors.
       local node_type=$( get_type $NODE_NAME )
@@ -93,6 +100,16 @@ function intr_get_location {
 }
 
 
+function intr_print {
+   local pass
+}
+
+
+function intr_write {
+   local pass
+}
+
+
 function intr_insert {
    local pass
 }
@@ -105,9 +122,8 @@ function intr_update {
 
 function intr_delete {
    intr_get_location
-
-   ent_delete $NODE_NAME 
-   print_data_type _NODE_1
+   ent_delete
+   #print_data_type $_ROOT ##DEBUG
 }
 
 
@@ -135,11 +151,11 @@ function get_type {
 
 #══════════════════════════════════╡ DELETE ╞═══════════════════════════════════
 function ent_delete {
-   ent_delete_type "$1"
-   if [[ -n $NODE_PREV ]] ; then
-      declare -n prev=$NODE_PREV
-      unset prev[$1]
-   fi
+   declare -n n=$NODE_NAME
+   echo "Beginning deletion of $NODE_NAME"
+
+   ent_delete_type "$NODE_NAME"
+   ent_delete_from_parent
 }
 
 
@@ -155,7 +171,26 @@ function ent_delete_type {
 }
 
 
+function ent_delete_from_parent {
+   local child_loc_name=$LOCATION
+   declare -n child_loc=$child_loc_name
+
+   local parent_name=$NODE_PREV
+   declare -n parent=$parent_name
+   parent_type=$( get_type $parent_name )
+
+   if [[ $parent_name == $_ROOT ]] ; then
+      unset $parent_name
+      _ROOT=''
+   else
+      unset parent[${child_loc[data]}]
+   fi
+}
+
+
 function ent_delete_type_string {
+   declare -n n=$1
+   echo "Unsetting $n"
    unset $1
 }
 
@@ -163,12 +198,10 @@ function ent_delete_type_string {
 function ent_delete_type_list {
    declare node_name="$1"
    declare -n node="$node_name"
-   
+
    for idx in "${!node[@]}" ; do
       ent_delete_type ${node[$idx]}
    done
-
-   unset $node_name
 }
 
 
@@ -178,12 +211,8 @@ function ent_delete_type_dict {
 
    for child_key in "${!node[@]}" ; do
       declare child_value=${node[$child_key]}
-
       ent_delete_type $child_value
-      unset node[$child_key]
    done
-
-   unset $node_name
 }
 
 #═══════════════════════════════╡ PRETTY PRINT ╞════════════════════════════════
@@ -217,7 +246,7 @@ function pp_list {
 
    echo "${HI_SURROUND}[${rst}"
    ((INDNT_LVL++))
-   
+
    for idx in "${!node[@]}" ; do
       declare child_name="${node[$idx]}"
 

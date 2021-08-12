@@ -20,6 +20,8 @@ declare -- CURRENT PEEK BUFFER
 
 # Using an associative array for easier querying.
 declare -A KEYWORDS=(
+   [write]=true
+   [\print]=true
    [insert]=true
    [update]=true
    [delete]=true
