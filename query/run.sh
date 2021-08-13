@@ -54,7 +54,6 @@ declare -A colormap=(
 for f in "${PROGDIR}"/lib/* ; do
    source "$f"
 done
-source "${PROGDIR}"/ents/interpreter.sh
 source "${PROGDIR}"/config.sh
 
 read -p 'query> ' INPUT_STRING
@@ -63,9 +62,11 @@ lex
 parse
 interpret
 
-for idx in $( seq 1 ${__meta__[max_node_ref]} ) ; do
-   declare -- n="_NODE_$idx"
-   declare -p $n 2>/dev/null
-done
+#for idx in $( seq 1 ${__meta__[max_node_ref]} ) ; do
+#   declare -- n="_NODE_$idx"
+#   declare -p $n 2>/dev/null
+#done
 
-echo "_ROOT=$_ROOT"
+#echo
+#echo "_ROOT=$_ROOT"
+#echo "PARENT=$PARENT"

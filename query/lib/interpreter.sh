@@ -10,8 +10,6 @@ declare -- QUERY           # Current 'query' within the location[]
 
 #────────────────────────────────( exceptions )─────────────────────────────────
 function raise_key_error {
-   #local loc="[${TOKEN[lineno]}:${TOKEN[colno]}]"
-   #echo -n "Key Error: ${loc} "
    echo -e "Key Error: Key ${byl}${1@Q}${rst} not found."
    exit -7
 }
@@ -57,58 +55,54 @@ function intr_method_map {
 
 
 function intr_get_location {
+   # There are only 2 types of subscription:
+   #  1. lists,  foo[0]
+   #  2. dicts,  foo.bar
+   # Strings are not subscriptable, they are a terminal node. Though how should
+   # we track the _ROOT node?
+
    declare -n location=$LOCATION
 
-   for loc_name in "${location[@]}" ; do
-      declare -n loc=$loc_name
+   for query_name in "${location[@]}" ; do
+      declare -n query=$query_name
 
       #───────────────────────( initial root node )─────────────────────────────
-      if [[ ${loc[type]} == '_ROOT' ]] ; then
-         declare -n root=${loc[data]}
+      if [[ ${query[type]} == '_ROOT' ]] ; then
+         declare -n root=${query[data]}
          NODE_PATH+=( $root )
          continue
       fi
 
-      #───────────────────( subsequent location nodes )─────────────────────────
+      #───────────────────( subsequent query nodes )─────────────────────────
       declare -- cur_node=${NODE_PATH[-1]}
       declare -n node=$cur_node
 
       # Validation: type errors.
       local node_type=$( get_type $cur_node )
-      if [[ $node_type != ${loc[type]} ]] ; then
-         raise_type_error "${loc[type]} subscription" "$node_type"
+      if [[ $node_type != ${query[type]} ]] ; then
+         raise_type_error "${query[type]} subscription" "$node_type"
       fi
 
       # Validation: key/index errors.
-      local key=${loc[data]}
+      local key=${query[data]}
 
       # List subscription, e.g., '[0]'
-      if [[ ${loc[type]} == 'list' ]] ; then
+      if [[ ${query[type]} == 'list' ]] ; then
          local min=$(( -1 * ${#node[@]} ))
          local max=$(( ${#node[@]} -1 ))
          if [[ $key -lt $min || $key -gt $max ]] ; then
             raise_index_error $key
          fi
       # Dict subscription, e.g., '.bar'
-      elif [[ ${loc[type]} == 'dict' ]] ; then
+      elif [[ ${query[type]} == 'dict' ]] ; then
          if [[ -z ${node[$key]} ]] ; then
             raise_key_error "$key"
          fi
       fi
 
+      # Finally... append node to path.
       NODE_PATH+=( ${node[$key]} )
    done
-}
-
-
-function intr_get_parent_location {
-   local len=${#NODE_PATH[@]}
-   
-   if [[ $len -eq 1 ]] ; then
-      echo "${NODE_PATH[-1]}"
-   else
-      echo "${NODE_PATH[len -2]}"
-   fi
 }
 
 
@@ -134,7 +128,9 @@ function intr_update {
 
 function intr_delete {
    intr_get_location
-   ent_delete
+
+   PARENT=$_ROOT
+   ent_delete_type ${NODE_PATH[-1]}
 }
 
 
@@ -155,18 +151,9 @@ function get_type {
 }
 
 #══════════════════════════════════╡ DELETE ╞═══════════════════════════════════
-function ent_delete {
-   PARENT=$_ROOT
-   ent_delete_type ${NODE_PATH[-1]}
-}
-
-
 function ent_delete_type {
    local node_name=$1
    local node_type=$( get_type "$node_name" )
-
-   # THINKIES: do I put something like:
-   # `[[ $node_name == $_ROOT ]] && return 0`
 
    case $node_type in
       'string')   ent_delete_type_string "$node_name" ;;
@@ -179,7 +166,15 @@ function ent_delete_type {
 function ent_delete_type_string {
    unset "$1"
    declare -n parent=$PARENT
-   unset parent[$QUERY] 
+   declare -n location=$LOCATION
+
+   echo "location[${location[@]}]"
+   for name in "${location[@]}" ; do
+      declare -n n=$name
+      echo "${n[@]}"
+   done
+
+   unset parent[$QUERY]
 }
 
 
@@ -195,14 +190,14 @@ function ent_delete_type_list {
    for idx in "${!node[@]}" ; do
       QUERY=$idx
       ent_delete_type ${node[$idx]}
-      unset node[$idx] 
+      unset node[$idx]
    done
 
    PARENT=$parent
    QUERY=$query
 
    declare -n p=$PARENT
-   unset p[$QUERY] 
+   unset p[$QUERY]
 
    unset $node_name
 }
@@ -220,14 +215,14 @@ function ent_delete_type_dict {
    for key in "${!node[@]}" ; do
       QUERY=$key
       ent_delete_type ${node[$key]}
-      unset node[$key] 
+      unset node[$key]
    done
 
    PARENT=$parent
    QUERY=$query
 
    declare -n p=$PARENT
-   unset p[$QUERY] 
+   unset p[$QUERY]
 
    unset $node_name
 }
