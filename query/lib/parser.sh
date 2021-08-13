@@ -23,7 +23,7 @@
 #     dict        -> '{' string COLON data (COMMA string COLON data)* (COMMA)? '}'
 #
 #
-# TRANSACTION = [                global list
+# TRANSACTIONS = [               global list
 #     transaction = {            transaction node object
 #        location: [             location node list
 #           loc1,                location node part
@@ -47,7 +47,7 @@ declare -- TOKEN TOKEN_NAME PEEK1 PEEK2
 
 #───────────────────────────────────( nodes )───────────────────────────────────
 # AST generation
-declare -a TRANSACTION
+declare -a TRANSACTIONS
 declare -- AST_NODE
 declare -i GLOBAL_AST_NUMBER=0
 
@@ -181,19 +181,7 @@ function mkMethod {
 }
 
 
-function mkDictSub {
-   ((GLOBAL_AST_NUMBER++))
-   local node_name="_QUERY_NODE_${GLOBAL_AST_NUMBER}"
-   declare -gA $node_name
-   declare -g AST_NODE="$node_name"
-
-   declare -n n=$node_name
-   n[type]=
-   n[data]=
-}
-
-
-function mkListSub {
+function mkSubscript {
    ((GLOBAL_AST_NUMBER++))
    local node_name="_QUERY_NODE_${GLOBAL_AST_NUMBER}"
    declare -gA $node_name
@@ -251,15 +239,15 @@ function munch {
    $found || raise_parse_error "${expected[@]}"
 }
 
-
+#──────────────────────────────────( grammar )──────────────────────────────────
 function grammar_query {
    grammar_transaction
-   TRANSACTION+=( $AST_NODE )
+   TRANSACTIONS+=( $AST_NODE )
 
    while [[ ${PEEK1[type]} == 'COMMA' ]] ; do
       munch 'COMMA'
       grammar_transaction
-      TRANSACTION+=( $AST_NODE )
+      TRANSACTIONS+=( $AST_NODE )
    done
 }
 
@@ -285,49 +273,60 @@ function grammar_location {
    declare -- node_name=$AST_NODE
    declare -n l=$node_name
 
+   # 1) Initial reference to root node.
    munch 'SLASH'
+   grammar_sub_root
+   l+=( $AST_NODE )
 
-   if [[ "${PEEK1[type]}" == 'L_BRACKET' ]] ; then
-      munch 'L_BRACKET'
-      grammar_list_sub
-      l+=( $AST_NODE )
-   elif [[ "${PEEK1[type]}" == 'IDENTIFIER' ]] ; then
-      grammar_dict_sub
-      l+=( $AST_NODE )
-   fi
+   ## 2) Subsequent list or dict subscription.
+   #if [[ "${PEEK1[type]}" == 'L_BRACKET' ]] ; then
+   #   munch 'L_BRACKET'
+   #   grammar_sub_list
+   #   l+=( $AST_NODE )
+   #elif [[ "${PEEK1[type]}" == 'IDENTIFIER' ]] ; then
+   #   grammar_sub_dict
+   #   l+=( $AST_NODE )
+   #fi
 
+   # 3) Additional further subscription.
    while [[ "${PEEK1[type]}" == 'DOT' ]] ||
          [[ "${PEEK1[type]}" == 'L_BRACKET' ]] ; do
       munch 'DOT,L_BRACKET'
 
       if [[ "${TOKEN[type]}" == 'L_BRACKET' ]] ; then
-         grammar_list_sub
+         grammar_sub_list
          l+=( $AST_NODE )
       elif [[ "${TOKEN[type]}" == 'DOT' ]] ; then
-         grammar_dict_sub
+         grammar_sub_dict
          l+=( $AST_NODE )
       fi
    done
 
+   # NOTE: must handle in the three phases above due to the structure of the
+   # query. Example:  `/foo.bar[0]`
+   # The leading 'foo' is a dict subscription, but does not use the leading DOT
+   # as it does in the 2nd component, '.bar'. Were we to treat the root node
+   # consistently, it would look like this: `/.foo.bar[0]`. But I think that's
+   # a nightmare.
+
    AST_NODE=$node_name
 }
 
 
-function grammar_dict_sub {
-   mkDictSub
+function grammar_sub_root {
+   mkSubscript
    declare -- node_name=$AST_NODE
    declare -n d=$node_name
 
-   munch 'IDENTIFIER'
-   d[type]='dict'
-   d[data]="${TOKEN[data]}"
+   d[type]=_ROOT
+   d[data]=_ROOT
 
    AST_NODE=$node_name
 }
 
 
-function grammar_list_sub {
-   mkListSub
+function grammar_sub_list {
+   mkSubscript
    declare -- node_name=$AST_NODE
    declare -n d=$node_name
 
@@ -336,6 +335,19 @@ function grammar_list_sub {
    d[data]=${TOKEN[data]}
 
    munch 'R_BRACKET'
+   AST_NODE=$node_name
+}
+
+
+function grammar_sub_dict {
+   mkSubscript
+   declare -- node_name=$AST_NODE
+   declare -n d=$node_name
+
+   munch 'IDENTIFIER'
+   d[type]='dict'
+   d[data]="${TOKEN[data]}"
+
    AST_NODE=$node_name
 }
 
@@ -444,5 +456,3 @@ function grammar_dict {
    # Reset global AST pointer to this Dict node.
    AST_NODE=$node_name
 }
-
-#──────────────────────────────────( grammar )──────────────────────────────────

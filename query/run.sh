@@ -61,5 +61,11 @@ read -p 'query> ' INPUT_STRING
 
 lex
 parse
-
 interpret
+
+for idx in $( seq 1 ${__meta__[max_node_ref]} ) ; do
+   declare -- n="_NODE_$idx"
+   declare -p $n 2>/dev/null
+done
+
+echo "_ROOT=$_ROOT"

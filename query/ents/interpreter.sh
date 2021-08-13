@@ -1,22 +1,12 @@
 #!/bin/bash
+# interpreter
 
-# Initial node
-NODE_NAME=$_ROOT
-NODE_PREV=$_ROOT
+declare -a NODE_PATH       # List of traveled nodes
+declare -- LOCATION        # This transaction's location query list
+declare -- METHOD          # This transaction's method
 
-LOCATION_LIST=    # This transactions location list.
-LOCATION=$_ROOT   # Current location within the list.
-METHOD=
-
-# CURRENT
-# Struggling on a good method to delete the children of an object, but also the
-# reference to it from it's parent. We need to hang onto the path to our current
-# location, as well as the references to get there.
-# Maybe setting a CURRENT_PATH[], then in `intr_get_location()` append the route
-# taken. Will need to come up with a better way to handle the _ROOT node though.
-# I think.
-#
-# Try to write a new function that uses this approach.
+declare -- PARENT          # Pointer to parent of currently 'selected' node
+declare -- QUERY           # Current 'query' within the location[]
 
 #────────────────────────────────( exceptions )─────────────────────────────────
 function raise_key_error {
@@ -41,13 +31,16 @@ function raise_type_error {
 
 #════════════════════════════════╡ INTERPRETER ╞════════════════════════════════
 function interpret {
-   for transaction_node_name in "${TRANSACTION[@]}" ; do
+   for transaction_node_name in "${TRANSACTIONS[@]}" ; do
+      # Reset node list to default.
+      NODE_PATH=()
+
       declare -n transaction=$transaction_node_name
       LOCATION=${transaction[location]}
       METHOD=${transaction[method]}
+
       intr_method_map
    done
-
 }
 
 
@@ -64,39 +57,58 @@ function intr_method_map {
 
 
 function intr_get_location {
-   declare -n location=$LOCATION_LIST
+   declare -n location=$LOCATION
 
    for loc_name in "${location[@]}" ; do
       declare -n loc=$loc_name
-      declare -n node=$NODE_NAME
 
-      # Tracking the current location within the AST. This allows us to refer
-      # from the parent to this node.
-      LOCATION=$loc_name
-      NODE_PREV=$NODE_NAME
+      #───────────────────────( initial root node )─────────────────────────────
+      if [[ ${loc[type]} == '_ROOT' ]] ; then
+         declare -n root=${loc[data]}
+         NODE_PATH+=( $root )
+         continue
+      fi
+
+      #───────────────────( subsequent location nodes )─────────────────────────
+      declare -- cur_node=${NODE_PATH[-1]}
+      declare -n node=$cur_node
 
       # Validation: type errors.
-      local node_type=$( get_type $NODE_NAME )
+      local node_type=$( get_type $cur_node )
       if [[ $node_type != ${loc[type]} ]] ; then
          raise_type_error "${loc[type]} subscription" "$node_type"
       fi
 
       # Validation: key/index errors.
       local key=${loc[data]}
+
+      # List subscription, e.g., '[0]'
       if [[ ${loc[type]} == 'list' ]] ; then
          local min=$(( -1 * ${#node[@]} ))
          local max=$(( ${#node[@]} -1 ))
          if [[ $key -lt $min || $key -gt $max ]] ; then
             raise_index_error $key
          fi
-         NODE_NAME=${node[$key]}
+      # Dict subscription, e.g., '.bar'
       elif [[ ${loc[type]} == 'dict' ]] ; then
-         NODE_NAME=${node[$key]}
-         if [[ -z $NODE_NAME ]] ; then
+         if [[ -z ${node[$key]} ]] ; then
             raise_key_error "$key"
          fi
       fi
+
+      NODE_PATH+=( ${node[$key]} )
    done
+}
+
+
+function intr_get_parent_location {
+   local len=${#NODE_PATH[@]}
+   
+   if [[ $len -eq 1 ]] ; then
+      echo "${NODE_PATH[-1]}"
+   else
+      echo "${NODE_PATH[len -2]}"
+   fi
 }
 
 
@@ -123,13 +135,12 @@ function intr_update {
 function intr_delete {
    intr_get_location
    ent_delete
-   #print_data_type $_ROOT ##DEBUG
 }
 
 
 function intr_print {
    intr_get_location
-   print_data_type $NODE_NAME
+   print_data_type ${NODE_PATH[-1]}
 }
 
 #───────────────────────────────────( utils )───────────────────────────────────
@@ -143,25 +154,19 @@ function get_type {
    esac
 }
 
-# THINKIES: wonder if we can use a sort of 'listener' architecture. Create
-# something that just walks the tree, then blasts to all subscribed listeners
-# who decide what to do with it. I feel like if this is something that's non-
-# trivial to implement correctly in Python, it will be next to impossible in
-# Bash. Challenge accepted? Perhaps for another day.
-
 #══════════════════════════════════╡ DELETE ╞═══════════════════════════════════
 function ent_delete {
-   declare -n n=$NODE_NAME
-   echo "Beginning deletion of $NODE_NAME"
-
-   ent_delete_type "$NODE_NAME"
-   ent_delete_from_parent
+   PARENT=$_ROOT
+   ent_delete_type ${NODE_PATH[-1]}
 }
 
 
 function ent_delete_type {
-   local node_name="$1"
+   local node_name=$1
    local node_type=$( get_type "$node_name" )
+
+   # THINKIES: do I put something like:
+   # `[[ $node_name == $_ROOT ]] && return 0`
 
    case $node_type in
       'string')   ent_delete_type_string "$node_name" ;;
@@ -171,48 +176,60 @@ function ent_delete_type {
 }
 
 
-function ent_delete_from_parent {
-   local child_loc_name=$LOCATION
-   declare -n child_loc=$child_loc_name
-
-   local parent_name=$NODE_PREV
-   declare -n parent=$parent_name
-   parent_type=$( get_type $parent_name )
-
-   if [[ $parent_name == $_ROOT ]] ; then
-      unset $parent_name
-      _ROOT=''
-   else
-      unset parent[${child_loc[data]}]
-   fi
-}
-
-
 function ent_delete_type_string {
-   declare -n n=$1
-   echo "Unsetting $n"
-   unset $1
+   unset "$1"
+   declare -n parent=$PARENT
+   unset parent[$QUERY] 
 }
 
 
 function ent_delete_type_list {
-   declare node_name="$1"
-   declare -n node="$node_name"
+   local parent=$PARENT
+   local query=$QUERY
+
+   local node_name=$1
+   declare -n node=$node_name
+
+   PARENT=$node_name
 
    for idx in "${!node[@]}" ; do
+      QUERY=$idx
       ent_delete_type ${node[$idx]}
+      unset node[$idx] 
    done
+
+   PARENT=$parent
+   QUERY=$query
+
+   declare -n p=$PARENT
+   unset p[$QUERY] 
+
+   unset $node_name
 }
 
 
 function ent_delete_type_dict {
-   declare node_name="$1"
-   declare -n node="$node_name"
+   local parent=$PARENT
+   local query=$QUERY
 
-   for child_key in "${!node[@]}" ; do
-      declare child_value=${node[$child_key]}
-      ent_delete_type $child_value
+   local node_name=$1
+   declare -n node=$node_name
+
+   PARENT=$node_name
+
+   for key in "${!node[@]}" ; do
+      QUERY=$key
+      ent_delete_type ${node[$key]}
+      unset node[$key] 
    done
+
+   PARENT=$parent
+   QUERY=$query
+
+   declare -n p=$PARENT
+   unset p[$QUERY] 
+
+   unset $node_name
 }
 
 #═══════════════════════════════╡ PRETTY PRINT ╞════════════════════════════════

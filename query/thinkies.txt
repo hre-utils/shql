@@ -1,0 +1,96 @@
+#───────────────────────────────────( given )───────────────────────────────────
+declare -- ROOT='NODE_1'
+declare -A NODE_1=(
+   [foo]=NODE_2=(
+            [this]=NODE_4='that',
+            [baz]=NODE_5(
+                     [here]=NODE_6='there'
+                  )
+         ),
+   [bar]=NODE_3=(
+            [when]=NODE_6='where',
+         )
+)
+
+#────────────────────────────────( pseudocode )─────────────────────────────────
+delete=NODE_1
+PARENT=ROOT
+LOCATION=
+
+delete_by_type($delete)
+
+
+def delete_by_type(node):
+   case type(node):
+      'string') delete_string(node)
+      'list'    delete_list(node)
+      'dict')   delete_dict(node)
+   esac
+
+
+def delete_dict(node):
+   local parent=$PARENT
+   PARENT=$node
+
+   for k,v in node.items():
+      LOCATION=$k
+      delete_by_type(v)
+      unset node[k]
+
+   PARENT=$parent
+
+
+def delete_string(node):
+   unset node
+   unset PARENT[$QUERY]
+
+#───────────────────────────────────( steps )───────────────────────────────────
+
+delete_by_type(NODE_1)
+   - type is 'dict'
+   - delete_dict(NODE_1)
+
+
+delete_dict(NODE_1)
+   - set local `parent` to $PARENT:    parent=ROOT
+   - set global `PARENT` to $node:     PARENT=NODE_1
+   for k,v in NODE_1.items():
+      # 1.
+      set global `LOCATION`            LOCATION=foo
+      delete_by_type(foo)  ->  NODE_2
+      unset NODE_1[foo]
+
+      # 2.
+      set global `LOCATION`            LOCATION=bar
+      delete_by_type(bar)  ->  NODE_3
+      unset NODE_1[bar]
+
+
+delete_by_type(NODE_2)
+   - type is 'dict'
+   - delete_dict(NODE_2)
+
+
+delete_dict(NODE_2)
+   - set local `parent` to $PARENT:    parent=NODE_1
+   - set global `PARENT` to $node:     PARENT=NODE_2
+   for k,v in NODE_2.items():
+      # 1.
+      set global `LOCATION`          LOCATION=this
+      delete_by_type(this) -> NODE_4
+      unset NODE_2[this]
+
+      # 2.
+      set global `LOCATION` to $k:   LOCATION=baz
+      delete_by_type(baz)  -> NODE_5
+      unset NODE_2[baz]
+
+
+delete_by_type(NODE_4):
+   - type is 'string'
+   - delete_string(NODE_4)
+
+
+delete_string(NODE_4)
+  unset[NODE_4]
+  unset PARENT['this']
