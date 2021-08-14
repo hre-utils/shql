@@ -4,17 +4,23 @@
 # The parsing component
 #
 # Grammar.
-#     query       -> transaction (COMMA transaction)* EOF
-#     transaction -> location GREATER method
-#     location    -> SLASH (dict_sub|list_sub)?
-#     dict_sub    -> DOT IDENTIFIER
-#     list_sub    -> '[' INTEGER ']'
+#     request     -> transaction (COMMA transaction)* EOF
+#     transaction -> query GREATER method
+#     query       -> SLASH (index)?
+#     index       -> dict_index
+#                  | list_index
+#     dict_index  -> DOT IDENTIFIER
+#     list_index  -> '[' INTEGER ']'
 #     method      -> insert
 #                  | update
 #                  | delete
+#                  | print
+#                  | write
 #     insert      -> insert '(' data ')'
 #     update      -> update '(' data ')'
 #     delete      -> '(' ')'
+#     print       -> '(' ')'
+#     write       -> '(' string ')'
 #     data        -> string
 #                  | list
 #                  | dict
@@ -23,31 +29,43 @@
 #     dict        -> '{' string COLON data (COMMA string COLON data)* (COMMA)? '}'
 #
 #
-# TRANSACTIONS = [               global list
-#     transaction = {            transaction node object
-#        location: [             location node list
-#           loc1,                location node part
-#           loc2
-#        ],
-#        method: 'method'        method node
-#     },
-#     transaction = {
-#        location: [],
-#        method: 'method'
-#     }
-# ]
+# Example created data structure.
+#     declare -a REQUEST=(
+#        R1
+#        R2
+#     )
+#
+#     declare -A R1=(
+#        [query]=Q1
+#        [method]=M1
+#     )
+#
+#     declare -A Q1=(
+#        [type]=list|dict
+#        [data]=
+#     )
+#
+#     declare -A M1=(
+#        [type]=insert|update|delete|...
+#        [data]=A1
+#     )
+#
+#     declare -a A1=(
+#        'argument1'
+#        'argument2'
+#     )
 
 #══════════════════════════════════╡ GLOBAL ╞═══════════════════════════════════
 # Kinda dumb and hacky. Starting at (-1) so the first call to advance() will
 # increment by 1, thus reading the *next* character, the first.
 declare -i IDX=-1
 declare -- TOKEN TOKEN_NAME PEEK1 PEEK2
-# TOKEN_NAME is the tname of the current token.
+# TOKEN_NAME is the name of the current token.
 # TOKEN is a nameref to the token itself.
 
 #───────────────────────────────────( nodes )───────────────────────────────────
 # AST generation
-declare -a TRANSACTIONS
+declare -a REQUEST
 declare -- AST_NODE
 declare -i GLOBAL_AST_NUMBER=0
 
@@ -57,7 +75,6 @@ function raise_parse_error {
    local loc="[${TOKEN[lineno]}:${TOKEN[colno]}]"
    echo -n "Parse Error: ${loc} "
    echo -e "Expected ${byl}${@}${rst}, received ${TOKEN[type]}."
-
    exit -2
 }
 
@@ -66,6 +83,8 @@ function raise_duplicate_key_error {
    local loc="[${TOKEN[lineno]}:${TOKEN[colno]}]"
    echo -n "Warning: ${loc} "
    echo -e "Key ${byl}${1@Q}${rst} already used. Overwriting previous."
+   # Not an exitable error, per se. Currently this is just a 'warning', for the
+   # user to be aware of. But there's no reason to hard stop here.
 }
 
 #───────────────────────────────────( utils )───────────────────────────────────
@@ -73,10 +92,8 @@ function t_advance {
    # Advance position in file, and position in line.
    ((IDX++))
 
-   TOKEN=
-   TOKEN_NAME=
-   PEEK1=
-   PEEK2=
+   # Reset pointers.
+   TOKEN= TOKEN_NAME= PEEK1= PEEK2=
 
    if [[ ${IDX} -lt ${#TOKENS[@]} ]] ; then
       TOKEN_NAME=${TOKENS[IDX]}
@@ -106,7 +123,8 @@ function check_lex_errors {
          ERROR_FOUND=true
 
          error_line=${FILE_BY_LINES[t[lineno]-1]}
-         # Just a bunch of stupid `sed` and color escape garbage.
+         # Just a bunch of stupid `sed` and color escape garbage. It makes
+         # errors print prettier.
          color_line=$(
             sed -E "s,(.{$((t[colno]-1))})(.)(.*),\1${rd}\2${rst}\3," \
             <<< "$error_line"
@@ -160,12 +178,12 @@ function mkTransaction {
    declare -g AST_NODE="$node_name"
 
    declare -n n=$node_name
-   n[location]=
+   n[query]=
    n[method]=
 }
 
 
-function mkLocation {
+function mkQuery {
    ((GLOBAL_AST_NUMBER++))
    local node_name="_QUERY_NODE_${GLOBAL_AST_NUMBER}"
    declare -ga $node_name
@@ -176,12 +194,27 @@ function mkLocation {
 function mkMethod {
    ((GLOBAL_AST_NUMBER++))
    local node_name="_QUERY_NODE_${GLOBAL_AST_NUMBER}"
-   declare -g $node_name
+   declare -gA $node_name
+   declare -g AST_NODE="$node_name"
+
+   declare -n n=$node_name
+   n[type]=
+   n[data]=
+}
+
+
+# XXX: Right now this is unused. Not now not actually using anything that has
+# an argument list. Only ever need a single argument. Should that become
+# necessary in the future, is easy to implement.
+function mkArgumentList {
+   ((GLOBAL_AST_NUMBER++))
+   local node_name="_QUERY_NODE_${GLOBAL_AST_NUMBER}"
+   declare -ga $node_name
    declare -g AST_NODE="$node_name"
 }
 
 
-function mkSubscript {
+function mkIndex {
    ((GLOBAL_AST_NUMBER++))
    local node_name="_QUERY_NODE_${GLOBAL_AST_NUMBER}"
    declare -gA $node_name
@@ -219,8 +252,7 @@ function mkDictionary {
 #══════════════════════════════════╡ PARSER ╞═══════════════════════════════════
 function parse {
    check_lex_errors
-
-   grammar_query
+   grammar_request
    munch 'EOF'
 }
 
@@ -240,14 +272,14 @@ function munch {
 }
 
 #──────────────────────────────────( grammar )──────────────────────────────────
-function grammar_query {
+function grammar_request {
    grammar_transaction
-   TRANSACTIONS+=( $AST_NODE )
+   REQUEST+=( $AST_NODE )
 
    while [[ ${PEEK1[type]} == 'COMMA' ]] ; do
       munch 'COMMA'
       grammar_transaction
-      TRANSACTIONS+=( $AST_NODE )
+      REQUEST+=( $AST_NODE )
    done
 }
 
@@ -255,78 +287,62 @@ function grammar_query {
 function grammar_transaction {
    mkTransaction
    declare -- node_name=$AST_NODE
-   declare -n t=$node_name
+   declare -n n=$node_name
 
-   grammar_location
-   t[location]=$AST_NODE
+   grammar_query
+   n[query]=$AST_NODE
 
    munch 'GREATER'
    grammar_method
-   t[method]=$AST_NODE
+
+   n[method]=$AST_NODE
 
    AST_NODE=$node_name
 }
 
 
-function grammar_location {
-   mkLocation
+function grammar_query {
+   mkQuery
    declare -- node_name=$AST_NODE
-   declare -n l=$node_name
+   declare -n n=$node_name
 
    # 1) Initial reference to root node.
    munch 'SLASH'
-   grammar_sub_root
-   l+=( $AST_NODE )
+   grammar_root_index
+   n+=( $AST_NODE )
 
-   ## 2) Subsequent list or dict subscription.
-   #if [[ "${PEEK1[type]}" == 'L_BRACKET' ]] ; then
-   #   munch 'L_BRACKET'
-   #   grammar_sub_list
-   #   l+=( $AST_NODE )
-   #elif [[ "${PEEK1[type]}" == 'IDENTIFIER' ]] ; then
-   #   grammar_sub_dict
-   #   l+=( $AST_NODE )
-   #fi
-
-   # 3) Additional further subscription.
+   # 2) Additional subscription.
    while [[ "${PEEK1[type]}" == 'DOT' ]] ||
          [[ "${PEEK1[type]}" == 'L_BRACKET' ]] ; do
       munch 'DOT,L_BRACKET'
 
       if [[ "${TOKEN[type]}" == 'L_BRACKET' ]] ; then
-         grammar_sub_list
-         l+=( $AST_NODE )
+         grammar_list_index
+         n+=( $AST_NODE )
       elif [[ "${TOKEN[type]}" == 'DOT' ]] ; then
-         grammar_sub_dict
-         l+=( $AST_NODE )
+         grammar_dict_index
+         n+=( $AST_NODE )
       fi
    done
 
-   # NOTE: must handle in the three phases above due to the structure of the
-   # query. Example:  `/foo.bar[0]`
-   # The leading 'foo' is a dict subscription, but does not use the leading DOT
-   # as it does in the 2nd component, '.bar'. Were we to treat the root node
-   # consistently, it would look like this: `/.foo.bar[0]`. But I think that's
-   # a nightmare.
-
    AST_NODE=$node_name
 }
 
 
-function grammar_sub_root {
-   mkSubscript
+function grammar_root_index {
+   mkIndex
    declare -- node_name=$AST_NODE
    declare -n d=$node_name
 
-   d[type]=_ROOT
-   d[data]=_ROOT
+   d[type]='dict'
+   d[data]='ROOT'
 
    AST_NODE=$node_name
 }
 
 
-function grammar_sub_list {
-   mkSubscript
+function grammar_list_index {
+   mkIndex
    declare -- node_name=$AST_NODE
    declare -n d=$node_name
 
@@ -339,8 +355,8 @@ function grammar_sub_list {
 }
 
 
-function grammar_sub_dict {
-   mkSubscript
+function grammar_dict_index {
+   mkIndex
    declare -- node_name=$AST_NODE
    declare -n d=$node_name
 
@@ -355,21 +371,26 @@ function grammar_sub_dict {
 function grammar_method {
    mkMethod
    declare -- node_name=$AST_NODE
-   declare -n m=$node_name
+   declare -n n=$node_name
 
-   # TODO: Haven't really yet thought through how I want to make these objects
-   #       per se. Still thinking about it.
    munch 'KEYWORD'
-   ktype=${TOKEN[data]}
+   method=${TOKEN[data]}
 
    munch 'L_PAREN'
-   if [[ $ktype =~ (insert|update) ]] ; then
-      grammar_data
-      m[data]=$AST_NODE
-   fi
+   case $method in
+      'write')
+            munch 'STRING'
+            grammar_string
+            n[data]=$AST_NODE
+            ;;
+      'insert'|'update')
+            grammar_data
+            n[data]=$AST_NODE
+            ;;
+   esac
    munch 'R_PAREN'
 
-   m[type]=$ktype
+   n[type]=$method
    AST_NODE=$node_name
 }
 
@@ -389,56 +410,52 @@ function grammar_data {
 function grammar_string {
    mkString
    declare -- node_name=$AST_NODE
-   declare -n s=$node_name
+   declare -n n=$node_name
+   n="${TOKEN[data]}"
 
-   s="${TOKEN[data]}"
-
-   # Reset global AST pointer to this String node.
    AST_NODE=$node_name
-
-   # DEBUG
-   #echo "STRING(${AST_NODE} -> $s)"
 }
 
 
 function grammar_list {
    mkList
    declare -- node_name=$AST_NODE
-   declare -n l=$node_name
+   declare -n n=$node_name
 
    grammar_data
-   l+=( $AST_NODE )
+   n+=( $AST_NODE )
 
    while [[ ${PEEK1[type]} == 'COMMA' ]] ; do
       munch 'COMMA'
+
+      # Allow for a trailing comma at the end of a list.
       [[ ${PEEK1[type]} == 'R_BRACKET' ]] && break
+
       grammar_data
-      l+=( $AST_NODE )
+      n+=( $AST_NODE )
    done
 
    munch 'R_BRACKET'
-
-   # Reset global AST pointer to this List node.
    AST_NODE=$node_name
-
-   # DEBUG
-   #echo "$(declare -p l) -> LIST(${l[@]})"
 }
 
 
 function grammar_dict {
    mkDictionary
    declare -- node_name=$AST_NODE
-   declare -n d=$node_name
+   declare -n n=$node_name
 
    # Initial assignment.
    munch 'STRING' ; local key=${TOKEN[data]}
    munch 'COLON'
-   grammar_data   ; d[$key]="$AST_NODE"
+   grammar_data   ; n[$key]="$AST_NODE"
 
    while [[ ${PEEK1[type]} == 'COMMA' ]] ; do
       munch 'COMMA'
+
+      # Allow for a trailing comma at the end of a dict.
       [[ ${PEEK1[type]} == 'R_BRACE' ]] && break
+
       # Subsequent assignments.
       munch 'STRING'
       local key=${TOKEN[data]}
@@ -448,11 +465,9 @@ function grammar_dict {
       fi
 
       munch 'COLON'
-      grammar_data ; d[$key]="$AST_NODE"
+      grammar_data ; n[$key]="$AST_NODE"
    done
 
    munch 'R_BRACE'
-
-   # Reset global AST pointer to this Dict node.
    AST_NODE=$node_name
 }

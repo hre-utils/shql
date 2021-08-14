@@ -63,7 +63,7 @@ parse
 interpret
 
 #for idx in $( seq 1 ${__meta__[max_node_ref]} ) ; do
-#   declare -- n="_NODE_$idx"
+#   declare -- n="_QUERY_NODE_$idx"
 #   declare -p $n 2>/dev/null
 #done
 
