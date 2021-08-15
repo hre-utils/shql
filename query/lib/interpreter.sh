@@ -1,22 +1,45 @@
 #!/bin/bash
 # interpreter
+#
+# TODO: Need to actually get helpful line information into the error messages
+# here. There's great error logging in the data compilation phase, why not also
+# in the query compilation and parsing?
+#
+# I don't like how much is kicked off by the `intr_call_method` method. Things
+# should be a bit more segmented. Currently it's very difficult to pull apart
+# bits from down the chain.
 
-declare -a NODE_PATH       # List of traveled nodes
-declare -- LOCATION        # This transaction's location query list
-declare -- METHOD          # This transaction's method
+# Query nodes & pointers
+declare -- FULL_QUERY      # Nameref to current transaction's query list
+declare -- QUERY           # Current query node within the full query list
+declare -- METHOD          # Current transaction's method
 
-declare -- PARENT          # Pointer to parent of currently 'selected' node
-declare -- QUERY           # Current 'query' within the location[]
+# The above section of pointers is a little confusing. It is more clearly
+# represented as such:
+#
+#   $REQUEST = [ TRANSACTION1, TRANSACTION2, ... ]
+#                     ^
+#                $transaction = ( QUERY_LIST, METHOD )
+#                                     ^
+#                                $FULL_QUERY = [ QUERY_NODE, QUERY_NODE, ... ]
+#                                                    ^
+#                                                  $QUERY
+
+# Input data nodes
+declare -a DATA_PATH       # Stack of visited parent nodes. LIFO.
+declare -- DATA_NODE       # Pointer to node selected by user's query
 
 #────────────────────────────────( exceptions )─────────────────────────────────
 function raise_key_error {
-   echo -e "Key Error: Key ${byl}${1@Q}${rst} not found."
+   echo -n "Key Error: "
+   echo -e "Key ${byl}${1@Q}${rst} not found."
    exit -7
 }
 
 
 function raise_index_error {
-   echo -e "Index Error: Index ${byl}[${1}]${rst} out of bounds."
+   echo -n "Index Error: "
+   echo -e "Index ${byl}[${1}]${rst} out of bounds."
    exit -8
 }
 
@@ -29,20 +52,35 @@ function raise_type_error {
 
 #════════════════════════════════╡ INTERPRETER ╞════════════════════════════════
 function interpret {
-   for transaction_node_name in "${TRANSACTIONS[@]}" ; do
-      # Reset node list to default.
-      NODE_PATH=()
+   for transaction_name in "${REQUEST[@]}" ; do
+      # Reset to default.
+      DATA_PATH=() DATA_NODE=_DATA
 
-      declare -n transaction=$transaction_node_name
-      LOCATION=${transaction[location]}
+      declare -n  transaction=$transaction_name
+      declare -ng FULL_QUERY=${transaction[query]}
+
+      # Locate node in tree to begin query.
+      intr_get_location
+
+      # Method.
       METHOD=${transaction[method]}
-
-      intr_method_map
+      intr_call_method
    done
+
+   re_cache
 }
 
 
-function intr_method_map {
+function re_cache {
+   declare -p _DATA >  "$PARSEFILE"
+   declare -p _META >> "$PARSEFILE"
+   for idx in $(seq 1 ${_META[max_node_ref]}) ; do
+      declare -p "_NODE_${idx}" 2>/dev/null
+   done >> "$PARSEFILE"
+}
+
+
+function intr_call_method {
    declare -n method=$METHOD
    case "${method[type]}" in
       'print')    intr_print  ;;
@@ -55,36 +93,21 @@ function intr_method_map {
 
 
 function intr_get_location {
-   # There are only 2 types of subscription:
-   #  1. lists,  foo[0]
-   #  2. dicts,  foo.bar
-   # Strings are not subscriptable, they are a terminal node. Though how should
-   # we track the _ROOT node?
-
-   declare -n location=$LOCATION
-
-   for query_name in "${location[@]}" ; do
+   for query_name in "${FULL_QUERY[@]}" ; do
       declare -n query=$query_name
+      declare -n node=$DATA_NODE
 
-      #───────────────────────( initial root node )─────────────────────────────
-      if [[ ${query[type]} == '_ROOT' ]] ; then
-         declare -n root=${query[data]}
-         NODE_PATH+=( $root )
-         continue
-      fi
-
-      #───────────────────( subsequent query nodes )─────────────────────────
-      declare -- cur_node=${NODE_PATH[-1]}
-      declare -n node=$cur_node
-
-      # Validation: type errors.
-      local node_type=$( get_type $cur_node )
-      if [[ $node_type != ${query[type]} ]] ; then
-         raise_type_error "${query[type]} subscription" "$node_type"
-      fi
+      DATA_PATH+=( $DATA_NODE )
 
       # Validation: key/index errors.
       local key=${query[data]}
+      local next=${node[$key]}
+
+      # Validation: type errors.
+      local node_type=$( get_type $DATA_NODE )
+      if [[ $node_type != ${query[type]} ]] ; then
+         raise_type_error "${query[type]} subscription" "$node_type"
+      fi
 
       # List subscription, e.g., '[0]'
       if [[ ${query[type]} == 'list' ]] ; then
@@ -95,53 +118,63 @@ function intr_get_location {
          fi
       # Dict subscription, e.g., '.bar'
       elif [[ ${query[type]} == 'dict' ]] ; then
-         if [[ -z ${node[$key]} ]] ; then
+         if [[ -z $next ]] ; then
             raise_key_error "$key"
          fi
       fi
 
-      # Finally... append node to path.
-      NODE_PATH+=( ${node[$key]} )
+      # Set reference to the subsequent node for the next iteration of the
+      # loop.
+      DATA_NODE=$next
    done
-}
 
-
-function intr_print {
-   local pass
+   # Set initial query pointer
+   declare -n query=${FULL_QUERY[-1]}
+   declare -g QUERY=${query[data]}
 }
 
 
 function intr_write {
-   local pass
+   declare -n data_node=${METHOD[data]}
+   declare -n path=${data_node[data]}
+
+   local dir=$( dirname "$path" )
+   mkdir -p "$dir"
+
+   # TODO: This is a pretty shit solution. Should temporarily disable the
+   # existing color, rather than re-writing the functions without it.
+   regular_print_data_type $DATA_NODE > "${dir}/${path}"
 }
 
 
 function intr_insert {
-   local pass
+   pass=
+   #local data_node_type=$( get_type $DATA_NODE )
+   #echo $data_node_type
 }
 
 
 function intr_update {
-   local pass
+   declare -- data_node_type=$( get_type $DATA_NODE )
+   declare -n insert_data_node=${METHOD[data]}
+   declare -- insert_data=${insert_data_node[data]}
+
+   intr_insert_data $insert_data
 }
 
 
 function intr_delete {
-   intr_get_location
-
-   PARENT=$_ROOT
-   ent_delete_type ${NODE_PATH[-1]}
+   intr_delete_type $DATA_NODE
 }
 
 
 function intr_print {
-   intr_get_location
-   print_data_type ${NODE_PATH[-1]}
+   print_data_type $DATA_NODE
 }
 
 #───────────────────────────────────( utils )───────────────────────────────────
 function get_type {
-   local t=$(declare -p "$1" | awk '{print $2}')
+   local t=$(declare -p $1 | awk '{print $2}')
 
    case $t in
       '--')    echo 'string' ;;
@@ -151,80 +184,50 @@ function get_type {
 }
 
 #══════════════════════════════════╡ DELETE ╞═══════════════════════════════════
-function ent_delete_type {
+function intr_delete_type {
    local node_name=$1
-   local node_type=$( get_type "$node_name" )
+   local node_type=$( get_type $node_name )
 
    case $node_type in
-      'string')   ent_delete_type_string "$node_name" ;;
-      'list')     ent_delete_type_list   "$node_name" ;;
-      'dict')     ent_delete_type_dict   "$node_name" ;;
+      'string')         intr_delete_string  $node_name ;;
+      'list'|'dict')    intr_delete_array   $node_name ;;
    esac
 }
 
 
-function ent_delete_type_string {
-   unset "$1"
-   declare -n parent=$PARENT
-   declare -n location=$LOCATION
+function intr_delete_string {
+   unset $1                               # Unset self.
+   declare -n parent=${DATA_PATH[-1]}     # Nameref to parent's node
+   unset parent[$QUERY]                   # Unset reference from parent
 
-   echo "location[${location[@]}]"
-   for name in "${location[@]}" ; do
-      declare -n n=$name
-      echo "${n[@]}"
-   done
-
-   unset parent[$QUERY]
 }
 
 
-function ent_delete_type_list {
-   local parent=$PARENT
-   local query=$QUERY
-
-   local node_name=$1
+function intr_delete_array {
+   # Bash associative arrays (dicts) and indexed arrays (lists) can be handled
+   # interchangeably when removing entries. They are both indexed the same, thus
+   # can be traversed the same.
+   declare -- node_name=$1
    declare -n node=$node_name
+   declare -- query=$QUERY
 
-   PARENT=$node_name
-
-   for idx in "${!node[@]}" ; do
-      QUERY=$idx
-      ent_delete_type ${node[$idx]}
-      unset node[$idx]
-   done
-
-   PARENT=$parent
-   QUERY=$query
-
-   declare -n p=$PARENT
-   unset p[$QUERY]
-
-   unset $node_name
-}
-
-
-function ent_delete_type_dict {
-   local parent=$PARENT
-   local query=$QUERY
-
-   local node_name=$1
-   declare -n node=$node_name
-
-   PARENT=$node_name
+   DATA_NODE=$node_name
+   DATA_PATH+=( $DATA_NODE )
 
    for key in "${!node[@]}" ; do
-      QUERY=$key
-      ent_delete_type ${node[$key]}
-      unset node[$key]
+      QUERY=$key                          # Set global query string
+      intr_delete_type ${node[$key]}      # Kick off recursive child deletion
+      unset node[$key]                    # Unset element from array
    done
 
-   PARENT=$parent
+   # Pop self from stack, so we can remove this node from its parent.
+   unset DATA_PATH[-1]
+
+   declare -n parent=${DATA_PATH[-1]}     # Reference parent element from stack
+   unset parent[$query]                   # Unset this element from its parent
+   unset $node_name                       # Unset self.
+
    QUERY=$query
-
-   declare -n p=$PARENT
-   unset p[$QUERY]
-
-   unset $node_name
 }
 
 #═══════════════════════════════╡ PRETTY PRINT ╞════════════════════════════════
@@ -238,25 +241,23 @@ function print_data_type {
    local node_type=$( get_type "$node_name" )
 
    case $node_type in
-      'string')   pp_string "$node_name" ;;
-      'list')     pp_list   "$node_name" ;;
-      'dict')     pp_dict   "$node_name" ;;
+      'string')   print_string "$node_name" ;;
+      'list')     print_list   "$node_name" ;;
+      'dict')     print_dict   "$node_name" ;;
    esac
 }
 
 
-function pp_string {
-   declare node_name="$1"
-   declare -n node="$node_name"
-   echo "${HI_STRING}${node@Q}${rst}"
+function print_string {
+   declare -n node=$1
+   echo "${HI_LINK[STRING]}${node@Q}${rst}"
 }
 
 
-function pp_list {
-   declare node_name="$1"
-   declare -n node="$node_name"
+function print_list {
+   declare -n node=$1
 
-   echo "${HI_SURROUND}[${rst}"
+   echo "${HI_LINK[SURROUND]}[${rst}"
    ((INDNT_LVL++))
 
    for idx in "${!node[@]}" ; do
@@ -266,19 +267,19 @@ function pp_list {
       echo -n "$(print_data_type ${child_name})"
 
       if [[ $idx -lt $(( ${#node[@]} -1 )) ]] ; then
-         echo "${HI_SURROUND},${rst} "
+         echo "${HI_LINK[SURROUND]},${rst} "
       else
          echo
       fi
    done
 
    ((INDNT_LVL--))
-   indent ; echo "${HI_SURROUND}]${rst}"
+   indent ; echo "${HI_LINK[SURROUND]}]${rst}"
 }
 
 
-function pp_dict {
-   echo -e "${HI_SURROUND}{${rst}"
+function print_dict {
+   echo -e "${HI_LINK[SURROUND]}{${rst}"
    ((INDNT_LVL++))
 
    declare node_name="$1"
@@ -290,16 +291,129 @@ function pp_dict {
    for child_key in "${!node[@]}" ; do
       ((num_keys_printed++))
       indent
-      echo -n "${HI_KEY}${child_key}${rst}${HI_SURROUND}:${rst} "
+      echo -n "${HI_LINK[KEY]}${child_key}${rst}${HI_LINK[SURROUND]}:${rst} "
       echo -n "$(print_data_type ${node[$child_key]})"
 
       if [[ $num_keys_printed -lt $total_keys ]] ; then
-         echo "${HI_COMMA},${rst} "
+         echo "${HI_LINK[COMMA]},${rst} "
       else
          echo
       fi
    done
 
    ((INDNT_LVL--))
-   indent ; echo "${HI_SURROUND}}${rst}"
+   indent ; echo "${HI_LINK[SURROUND]}}${rst}"
+}
+
+#───────────────────────────────( regular print )───────────────────────────────
+function regular_print_data_type {
+   local node_name="$1"
+   local node_type=$( get_type "$node_name" )
+
+   case $node_type in
+      'string')   regular_print_string "$node_name" ;;
+      'list')     regular_print_list   "$node_name" ;;
+      'dict')     regular_print_dict   "$node_name" ;;
+   esac
+}
+
+
+function regular_print_string {
+   declare -n node=$1
+   echo "${node@Q}"
+}
+
+
+function regular_print_list {
+   declare -n node=$1
+
+   echo "["
+   ((INDNT_LVL++))
+
+   for idx in "${!node[@]}" ; do
+      declare child_name="${node[$idx]}"
+
+      indent
+      echo -n "$(regular_print_data_type ${child_name})"
+
+      if [[ $idx -lt $(( ${#node[@]} -1 )) ]] ; then
+         echo ", "
+      else
+         echo
+      fi
+   done
+
+   ((INDNT_LVL--))
+   indent ; echo "]"
+}
+
+
+function regular_print_dict {
+   echo -e "{"
+   ((INDNT_LVL++))
+
+   declare node_name="$1"
+   declare -n node="$node_name"
+
+   declare -i num_keys_printed=0
+   declare -i total_keys=${#node[@]}
+
+   for child_key in "${!node[@]}" ; do
+      ((num_keys_printed++))
+      indent
+      echo -n "${child_key}: "
+      echo -n "$(regular_print_data_type ${node[$child_key]})"
+
+      if [[ $num_keys_printed -lt $total_keys ]] ; then
+         echo ","
+      else
+         echo
+      fi
+   done
+
+   ((INDNT_LVL--))
+   indent ; echo "}"
+}
+
+#══════════════════════════════════╡ INSERT ╞═══════════════════════════════════
+function intr_insert_data {
+   local node_name=$1
+   local node_type=$( get_type $node_name )
+
+   case $node_type in
+      'string')         intr_insert_string $node_name ;;
+      'list'|'dict')    intr_insert_array  $node_name ;;
+   esac
+}
+
+
+function intr_insert_list {
+   unset $1                               # Unset self.
+   declare -n parent=${DATA_PATH[-1]}     # Nameref to parent's node
+   unset parent[$QUERY]                   # Unset reference from parent
+}
+
+
+function intr_insert_array {
+   declare -- node_name=$1
+   declare -n node=$node_name
+   declare -- query=$QUERY
+
+   DATA_NODE=$node_name
+   DATA_PATH+=( $DATA_NODE )
+
+   for key in "${!node[@]}" ; do
+      QUERY=$key                          # Set global query string
+      intr_delete_type ${node[$key]}      # Kick off recursive child deletion
+      unset node[$key]                    # Unset element from array
+   done
+
+   # Pop self from stack, so we can remove this node from its parent.
+   unset DATA_PATH[-1]
+
+   declare -n parent=${DATA_PATH[-1]}     # Reference parent element from stack
+   unset parent[$query]                   # Unset this element from its parent
+   unset $node_name                       # Unset self.
+
+   QUERY=$query
 }

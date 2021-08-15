@@ -10,8 +10,8 @@ fi
 FILE_HASH=$( md5sum "$INFILE" )
 FILE_HASH=${FILE_HASH%% *}
 
-COMPILEDIR="$( dirname "$PROGDIR" )/compiler"
-PARSEFILE="${COMPILEDIR}/cache/${FILE_HASH}"
+# Location of dumped output from the data compilation.
+PARSEFILE="$( dirname "$PROGDIR" )/.cache/${FILE_HASH}"
 
 if [[ ! -e "$PARSEFILE" ]] ; then
    echo "Input file has not been parsed."
@@ -62,11 +62,6 @@ lex
 parse
 interpret
 
-#for idx in $( seq 1 ${__meta__[max_node_ref]} ) ; do
-#   declare -- n="_QUERY_NODE_$idx"
-#   declare -p $n 2>/dev/null
+#for idx in $(seq 1 ${_META[max_node_ref]}) ; do
+#   declare -p "_NODE_${idx}" 2>/dev/null
 #done
-
-#echo
-#echo "_ROOT=$_ROOT"
-#echo "PARENT=$PARENT"

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 function pretty_print {
-   print_type _NODE_1
+   print_type ${_DATA[ROOT]}
 }
 
 
@@ -46,7 +46,7 @@ function pp_list {
 
    echo "${HI_SURROUND}[${rst}"
    ((INDNT_LVL++))
-   
+
    for idx in "${!node[@]}" ; do
       declare child_name="${node[$idx]}"
 

@@ -233,13 +233,10 @@ function delete_array {
    declare -n node=$node_name
 
    DATA_NODE=$node_name
-
    stack+=( $DATA_NODE )
 
-   declare -n node=$node_name
    for key in "${!node[@]}" ; do
       QUERY=$key                                # Set global query string
-
       delete ${node[$key]}                      # Kick off recursive child deletion
       unset node[$key]                          # Unset element from array
    done

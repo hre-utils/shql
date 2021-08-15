@@ -1,7 +1,9 @@
 #!/bin/bash
-# lexer.sh
-#
 # The lexing component
+#
+# Methods:
+#  1. lex
+#  2. print_tokens
 
 #══════════════════════════════════╡ GLOBAL ╞═══════════════════════════════════
 declare -a TOKENS=()
@@ -12,12 +14,16 @@ declare -A CURSOR=(
    [lineno]=1
    [colno]=0
    [pos]=-1
-   # Kinda dumb and hacky. Starting at (-1) so the first call to advance() will
-   # increment by 1, thus reading the *next* character, the first.
 )
 
 declare -A FREEZE
+# At the beginning of each loop, the cursor information is "frozen", allowing
+# us to retain the start position of multi-character tokens (keywords, strings,
+# etc.).
+
 declare -- CURRENT PEEK BUFFER
+# Global pointer to subsequent tokens, and string buffer to hold the contents
+# of multi-character tokens.
 
 declare -A colormap=(
    [DOT]="$yl"
@@ -35,6 +41,9 @@ declare -A colormap=(
 
 #═══════════════════════════════════╡ UTILS ╞═══════════════════════════════════
 function print_tokens {
+   # For debugging. Prints a pretty-printed format of the token list. Currently
+   # unsuitable for dumping to a text file, as it won't render the color
+   # esacpes. Working on creating a --no-color flag for this purpose.
    for tname in "${TOKENS[@]}" ; do
       declare -n t="$tname"
       declare col="${colormap[${t[type]}]}"
@@ -46,6 +55,21 @@ function print_tokens {
 
 
 function Token {
+   # This is a "Class"... kinda. Realistically this is not how I would create
+   # an actual class in Bash, however it suits the current application.
+   #
+   # Parameters:
+   #     $1  string, token type
+   #     $2  string (opt), payload of the token, or contents of buffer if unset
+   #
+   # Does:
+   #     1. Globally declares an associative array, with incrementing name
+   #     2. Appends array name to global TOKENS list
+   #     3. Assigns type/data information from above
+   #     4. Assigns cursor information for debugging from FREEZE (see global
+   #        section for information)
+   #     5. Incremenents global token name counter
+
    ttype="$1"
    data="${2:-$BUFFER}"
 
@@ -53,50 +77,47 @@ function Token {
       echo "Missing \$ttype" ; exit 2
    fi
 
-   # Make token. Add to list.
+   # Generate unique token name, add to global list.
    tname="token_${GLOBAL_TOKEN_NUMBER}"
    TOKENS+=( $tname )
 
+   # Create token, and local nameref.
    declare -Ag $tname
    declare -n t=$tname
 
-   # Data.
+   # Assign data.
    t[type]="$ttype"
    t[data]="$data"
 
-   # Meta information.
+   # Assign meta information.
    t[lineno]=${FREEZE[lineno]}
    t[colno]=${FREEZE[colno]}
    t[pos]=${FREEZE[pos]}
 
-   # Increment.
-   ((GLOBAL_TOKEN_NUMBER++))
-
-   # TODO: Hitting an odd situation in which the first increment is returning a
-   #       '1' status for some reason. Need to figure out why that is. Remove
-   #       elements to narrow down. I don't think incrementing a number should
-   #       return anything but '0'.
-   return 0
+   ((++GLOBAL_TOKEN_NUMBER))
+   # If an ((expression)) evaluates to 0, it returns a '1' exit status. To
+   # ensure we always have a '0' status, ((++var)) will increment first, then
+   # return.
 }
 
 #════════════════════════════════════╡ GO ╞═════════════════════════════════════
 function lex {
-   # Fill into array, allows us to seek forwards & backwards.
+   # Fill individual characters into array, allows more easy 'peek' operations.
    while read -rN1 c ; do
       CHARRAY+=( "$c" )
    done < "$INFILE"
 
-   # TODO;XXX
-   # Creating secondary line buffer to do better debug output printing.
+   # Creating secondary line buffer to do better debug output printing. It would
+   # be more efficient to *only* hold a buffer of lines up until each newline.
+   # Unpon an error, we'd only need to save the singular line, then can resume
+   # overwriting. This is in TODO already.
    mapfile -td $'\n' FILE_BY_LINES < "$INFILE"
 
-   # Iterate over array of characters. Lex into tokens.
    while [[ ${CURSOR[pos]} -lt ${#CHARRAY[@]} ]] ; do
       advance
       [[ -z $CURRENT ]] && break
 
-      # "Freeze" the line number and cursor number, such that they're attached
-      # to the *start* of a token, rather than the end.
+      # See detail in the 'GLOBAL' section concerning FREEZE.
       FREEZE[lineno]=${CURSOR[lineno]}
       FREEZE[colno]=${CURSOR[colno]}
       FREEZE[pos]=${CURSOR[pos]}
@@ -150,8 +171,7 @@ function advance {
    ((CURSOR[pos]++))
    ((CURSOR[colno]++))
 
-   CURRENT=
-   PEEK=
+   CURRENT= PEEK=
 
    if [[ ${CURSOR[pos]} -lt ${#CHARRAY[@]} ]] ; then
       CURRENT=${CHARRAY[CURSOR[pos]]}
@@ -161,6 +181,7 @@ function advance {
       PEEK=${CHARRAY[CURSOR[pos]+1]}
    fi
 
+   # If we hit a newline...
    if [[ "$CURRENT" == $'\n' ]] ; then
       ((CURSOR[lineno]++))    # Increment line number.
       CURSOR[colno]=0         # Reset column position.
@@ -169,6 +190,8 @@ function advance {
 
 
 function comment {
+   # There are no multiline comments. Seeks from '#' to the end of the line.
+   # There are no EOL tokens. Looks for '\n'.
    while [[ -n $CURRENT ]] ; do
       [[ "$PEEK" =~ [$'\n'] ]] && break
       advance
@@ -177,6 +200,8 @@ function comment {
 
 
 function string {
+   # Supports both '/" characters to indicate strings, and intermediate '/"
+   # characters can be escaped with a backslash.
    delim="$1"
    declare -a buffer=()
 
@@ -208,6 +233,9 @@ function string {
 
 
 function identifier {
+   # NYI. Identifiers currently raise a syntax error. However they will be
+   # supported in future versions. They follow the same naming conventions as
+   # shell words.
    BUFFER="$CURRENT"
 
    while [[ -n $CURRENT ]] ; do
@@ -222,6 +250,8 @@ function identifier {
 
 
 function number {
+   # All "numbers" are floats. There are no supported sci, hex, or binary
+   # representations.
    BUFFER="$CURRENT"
 
    local decimal=false

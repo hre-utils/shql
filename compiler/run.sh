@@ -45,15 +45,13 @@ PROGDIR=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd )
 # Hash for caching.
 RUN_HASH=$( md5sum "$INFILE" )
 RUN_HASH=${RUN_HASH%% *}
-HASHFILE="${PROGDIR}/cache/${RUN_HASH}"
+HASHFILE="$( dirname "${PROGDIR}" )/.cache/${RUN_HASH}"
 mkdir -p "$(dirname "${HASHFILE}")"
 
+source "${PROGDIR}/config.sh"
 for f in "${PROGDIR}"/lib/* ; do
    source "$f"
 done
-
-source "${PROGDIR}/ents/pretty_printer.sh"
-source "${PROGDIR}/config.sh"
 
 # Cached?
 [[ -e "$HASHFILE" ]] && exit 0
@@ -62,5 +60,3 @@ source "${PROGDIR}/config.sh"
 lex
 parse
 cache_ast
-
-#pretty_print

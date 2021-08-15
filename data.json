@@ -1,7 +1,9 @@
 {
    "this": "that",
    "here": [
-      "one", "two", "three"
+      "one",
+      "two",
+      "three"
    ],
    "more": {
       "beep": "boop"

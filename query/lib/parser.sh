@@ -1,59 +1,57 @@
 #!/bin/bash
-# parser.sh
-#
 # The parsing component
 #
 # Grammar.
-#     request     -> transaction (COMMA transaction)* EOF
-#     transaction -> query GREATER method
-#     query       -> SLASH (index)?
-#     index       -> dict_index
-#                  | list_index
-#     dict_index  -> DOT IDENTIFIER
-#     list_index  -> '[' INTEGER ']'
-#     method      -> insert
-#                  | update
-#                  | delete
-#                  | print
-#                  | write
-#     insert      -> insert '(' data ')'
-#     update      -> update '(' data ')'
-#     delete      -> '(' ')'
-#     print       -> '(' ')'
-#     write       -> '(' string ')'
-#     data        -> string
-#                  | list
-#                  | dict
-#     string      -> '"' non-"-chars '"'
-#     list        -> '[' data (COMMA data)* (COMMA)? ']'
-#     dict        -> '{' string COLON data (COMMA string COLON data)* (COMMA)? '}'
+#  request     -> transaction (COMMA transaction)* EOF
+#  transaction -> query GREATER method
+#  query       -> SLASH (index)?
+#  index       -> dict_index
+#               | list_index
+#  dict_index  -> DOT IDENTIFIER
+#  list_index  -> '[' INTEGER ']'
+#  method      -> insert
+#               | update
+#               | delete
+#               | print
+#               | write
+#  insert      -> insert '(' data ')'
+#  update      -> update '(' data ')'
+#  delete      -> '(' ')'
+#  print       -> '(' ')'
+#  write       -> '(' string ')'
+#  data        -> string
+#               | list
+#               | dict
+#  string      -> '"' non-"-chars '"'
+#  list        -> '[' data (COMMA data)* (COMMA)? ']'
+#  dict        -> '{' string COLON data (COMMA string COLON data)* (COMMA)? '}'
 #
 #
 # Example created data structure.
-#     declare -a REQUEST=(
-#        R1
-#        R2
-#     )
+#  declare -a REQUEST=(
+#     R1
+#     R2
+#  )
 #
-#     declare -A R1=(
-#        [query]=Q1
-#        [method]=M1
-#     )
+#  declare -A R1=(
+#     [query]=Q1
+#     [method]=M1
+#  )
 #
-#     declare -A Q1=(
-#        [type]=list|dict
-#        [data]=
-#     )
+#  declare -A Q1=(
+#     [type]=list|dict
+#     [data]=
+#  )
 #
-#     declare -A M1=(
-#        [type]=insert|update|delete|...
-#        [data]=A1
-#     )
+#  declare -A M1=(
+#     [type]=insert|update|delete|...
+#     [data]=A1
+#  )
 #
-#     declare -a A1=(
-#        'argument1'
-#        'argument2'
-#     )
+#  declare -a A1=(
+#     'argument1'
+#     'argument2'
+#  )
 
 #══════════════════════════════════╡ GLOBAL ╞═══════════════════════════════════
 # Kinda dumb and hacky. Starting at (-1) so the first call to advance() will
