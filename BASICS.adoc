@@ -4,4 +4,36 @@ Marcus Aurelius <marcus [at] aurelius [dot] org>
 :pygments-style:         algol_nu
 :pygments-linenums-mode: table
 :toc:                    left
-:toclevels:              3
+:toclevels:              2
+
+A step-by-step introduction to understanding the Bash behind _shql_.
+
+== The Objective
+Parsing JSON into a bash readable data structure.
+
+== Difficulties
+The following are the general _bash specific_ difficulties to overcome.
+There are other programming and design challenges, but those will be present in any language.
+
+
+=== Everything is text
+It is very often one hear the phrase `"everything is text"` in the *NIX world, especially in bash.
+The upside is text processing languages (`awk`, `sed`) can interact with nearly anything,
+and chaining a sequence of commands becomes monsterously powerful.
+
+It also makes (some) simple operations equally monsterously more difficult.
+
+To fill gaps in the missing functionality, we need to abuse some of the exceptions to this rule.
+
+==== Nesting
+Bash *does* have data types.
+There are indexed arrays (`declare -a list`), and associative arrays (`declare -A dict`).
+Integers may also be declared (`declare -i int`).
+They are technically still strings, though behave differently when non-numbers are declared as int (they have an '`integer value`' of 0).
+
+I would posit an argument can be made for counting functions as another data type, especially when dynamically generated.
+But that's for (https://github.com/hre-utils/blog/blob/main/2021-04-17.adoc)[another time].
+
+==== Arguments
+=== Scope
+=== Classes
