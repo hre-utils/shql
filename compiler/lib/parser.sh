@@ -2,6 +2,8 @@
 # The parsing component
 #
 # Methods:
+#  dump_nodes
+#  cache_ast
 #  parse
 
 #══════════════════════════════════╡ GLOBAL ╞═══════════════════════════════════
@@ -99,7 +101,10 @@ function check_lex_errors {
          color_line=$(
             sed -E "s,(.{$((t[colno]-1))})(.)(.*),\1${rd}\2${rst}\3," \
             <<< "$error_line"
-         ) # Just a bunch of stupid `sed` and color escape garbage.
+         )
+         # ^- Just a bunch of stupid `sed` and color escape garbage to color
+         # code the actual error character itself to red, while leaving the rest
+         # of the text the standard background color.
 
          msg_text="${t[data]}"
          msg_length=$(( ${#msg_text} + 2 ))
@@ -279,14 +284,14 @@ function grammar_dict {
 }
 
 #═══════════════════════════════════╡ CACHE ╞═══════════════════════════════════
-function cache_ast {
+function dump_nodes {
    _META[max_node_ref]=$GLOBAL_AST_NUMBER
-   declare -p _META >  "$HASHFILE"
-   declare -p _DATA >> "$HASHFILE"
+   declare -p _META
+   declare -p _DATA
+   declare -p ${!_NODE_*}
+}
 
-   declare -i idx=1
-   while [[ $idx -le $GLOBAL_AST_NUMBER ]] ; do
-      declare -p "_NODE_${idx}"
-      ((idx++))
-   done >> "$HASHFILE"
+
+function cache_ast {
+   dump_nodes > "$HASHFILE"
 }

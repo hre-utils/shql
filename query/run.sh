@@ -62,6 +62,8 @@ lex
 parse
 interpret
 
-#for idx in $(seq 1 ${_META[max_node_ref]}) ; do
-#   declare -p "_NODE_${idx}" 2>/dev/null
-#done
+## DEBUG
+#declare -p ${!_QUERY_NODE_*}
+#declare -p _META
+#declare -p _DATA
+#declare -p ${!_NODE_*}

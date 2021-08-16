@@ -101,6 +101,7 @@ function lex {
       # Symbols.
       case "$CURRENT" in
          '.')  Token       'DOT' "$CURRENT" &&  continue ;;
+         ';')  Token      'SEMI' "$CURRENT" &&  continue ;;
          ':')  Token     'COLON' "$CURRENT" &&  continue ;;
          ',')  Token     'COMMA' "$CURRENT" &&  continue ;;
          '/')  Token     'SLASH' "$CURRENT" &&  continue ;;

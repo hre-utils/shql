@@ -2,7 +2,7 @@
 # The parsing component
 #
 # Grammar.
-#  request     -> transaction (COMMA transaction)* EOF
+#  request     -> transaction (SEMI transaction)* EOF
 #  transaction -> query GREATER method
 #  query       -> SLASH (index)?
 #  index       -> dict_index
@@ -72,7 +72,8 @@ declare -i GLOBAL_AST_NUMBER=0
 function raise_parse_error {
    local loc="[${TOKEN[lineno]}:${TOKEN[colno]}]"
    echo -n "Parse Error: ${loc} "
-   echo -e "Expected ${byl}${@}${rst}, received ${TOKEN[type]}."
+   echo -e "Expected ${yl}$@${rst}, received ${TOKEN[type]}"
+
    exit -2
 }
 
@@ -80,11 +81,58 @@ function raise_parse_error {
 function raise_duplicate_key_error {
    local loc="[${TOKEN[lineno]}:${TOKEN[colno]}]"
    echo -n "Warning: ${loc} "
-   echo -e "Key ${byl}${1@Q}${rst} already used. Overwriting previous."
-   # Not an exitable error, per se. Currently this is just a 'warning', for the
-   # user to be aware of. But there's no reason to hard stop here.
+   echo -e "Key ${byl}${1@Q}${rst} already used (overwriting previous)"
+   # Not an exitable error, per se. Currently this is just a 'warning' for the
+   # user to be aware of.
 }
 
+
+# TODO: This is a pretty good implementation, as it can be used throughout the
+# text, but it's unable to get the length excluding non-printing characters.
+# There're a number of ways we could handle this, none of them great. Can calc
+# the length of the string before passing it in. Then set $2 to the str length
+# without color escapes. Can try to `sed` them out, which is insanity. Can also
+# pass in the data in 3 parts:
+#  - before=$1  (uncolored)
+#  - error=$2   (colored)
+#  - after=$3   (uncolored)
+# Allows us to easily get the location of the error string in the text. This is
+# a preeetttyy low priority feature. Definitely low on the list.
+function pretty_print_debug_pointer {
+   local loc="[${TOKEN[lineno]}:${TOKEN[colno]}]"
+   local msg="$1"
+
+   msg_length=$(( ${#msg} + 2 ))
+   error_pos=$(( TOKEN[colno] + 7 ))
+
+   # Box drawing line characters that point to the offending character.
+   pointer='' ; hzsep=''
+
+   # The error is directly below the indicator, only need a pipe.
+   if [[ $msg_length -eq $error_pos ]] ; then
+      offset=$(( msg_length -1 ))
+      pointer='│'
+   # For errors in *front* of the initial indicator.
+   elif [[ $msg_length -lt $error_pos ]] ; then
+      offset=$(( msg_length -1 ))
+      for i in $( seq $((error_pos - msg_length -1)) ) ; do
+         hzsep+='─'
+      done
+      pointer="└${hzsep}┐"
+   # For errors *behind* the indicator.
+   elif [[ $msg_length -gt $error_pos ]] ; then
+      offset=$(( error_pos -1 ))
+      for i in $( seq $((msg_length - error_pos -1)) ) ; do
+         hzsep+='─'
+      done
+      pointer="┌${hzsep}┘"
+   fi
+
+   # Print it!
+   echo -e "${msg} ${cy}┐${rst}"
+   printf "%${offset}s${cy}${pointer}${rst}\n"  ''
+   printf "${cy}query>${rst} ${INPUT_STRING}\n" ${TOKEN[lineno]-1]}
+}
 #───────────────────────────────────( utils )───────────────────────────────────
 function t_advance {
    # Advance position in file, and position in line.
@@ -274,8 +322,8 @@ function grammar_request {
    grammar_transaction
    REQUEST+=( $AST_NODE )
 
-   while [[ ${PEEK1[type]} == 'COMMA' ]] ; do
-      munch 'COMMA'
+   while [[ ${PEEK1[type]} == 'SEMI' ]] ; do
+      munch 'SEMI'
       grammar_transaction
       REQUEST+=( $AST_NODE )
    done
@@ -381,7 +429,22 @@ function grammar_method {
             grammar_string
             n[data]=$AST_NODE
             ;;
-      'insert'|'update')
+      'insert')
+            # TODO;XXX:
+            # Kinda hate that this is the way you have to do things, but it
+            # allows us to more easily allow for an optional index parameter,
+            # while still letting you insert data into lists without needing to
+            # pass any extra parameter.
+            if [[ ${PEEK1[type]} == 'IDENTIFIER' ]] ; then
+               munch 'IDENTIFIER'
+               n[index]=${TOKEN[data]}
+               munch 'COLON'
+            fi
+
+            grammar_data
+            n[data]=$AST_NODE
+            ;;
+      'update')
             grammar_data
             n[data]=$AST_NODE
             ;;
@@ -458,7 +521,7 @@ function grammar_dict {
       munch 'STRING'
       local key=${TOKEN[data]}
 
-      if [[ -n "${d[$key]}" ]] ; then
+      if [[ -n "${n[$key]}" ]] ; then
          raise_duplicate_key_error "$key"
       fi
 

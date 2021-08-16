@@ -1,6 +1,6 @@
 #!/bin/bash
 # baSH Query Language
 
-PROGDIR=$( cd "$(dirname "${BASH_SOURCE[@]}")" ; pwd )
+PROGDIR=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd )
 bash "$PROGDIR"/compiler/run.sh "$1"
 bash "$PROGDIR"/query/run.sh "$1"

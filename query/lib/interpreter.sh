@@ -1,13 +1,18 @@
 #!/bin/bash
 # interpreter
 #
-# TODO: Need to actually get helpful line information into the error messages
+# TODO:
+# 1) Need to actually get helpful line information into the error messages
 # here. There's great error logging in the data compilation phase, why not also
 # in the query compilation and parsing?
 #
-# I don't like how much is kicked off by the `intr_call_method` method. Things
-# should be a bit more segmented. Currently it's very difficult to pull apart
-# bits from down the chain.
+# 2) I don't like how much is kicked off by the `intr_call_method` method.
+# Things should be a bit more segmented. Currently it's very difficult to pull
+# apart bits from down the chain.
+#
+# 3) When deleting the _DATA[ROOT] node, we lose the [ROOT] propr on _DATA.
+# Unable to query or insert back onto it. Special case to re-establisht the
+# key?
 
 # Query nodes & pointers
 declare -- FULL_QUERY      # Nameref to current transaction's query list
@@ -50,6 +55,22 @@ function raise_type_error {
    exit -9
 }
 
+
+function raise_update_dict_error {
+   echo -n  "Key Error: "
+   echo -ne "Key ${byl}${1@Q}${rst} already exists. "
+   echo -e  "Perhaps you meant ${yl}update()${rst}?"
+   exit -10
+}
+
+
+function raise_update_string_error {
+   echo -n  "Type Error: "
+   echo -ne "Unable to insert into a string. "
+   echo -e  "Perhaps you meant ${yl}update()${rst}?"
+   exit -11
+}
+
 #════════════════════════════════╡ INTERPRETER ╞════════════════════════════════
 function interpret {
    for transaction_name in "${REQUEST[@]}" ; do
@@ -57,13 +78,17 @@ function interpret {
       DATA_PATH=() DATA_NODE=_DATA
 
       declare -n  transaction=$transaction_name
-      declare -ng FULL_QUERY=${transaction[query]}
+      declare -gn FULL_QUERY=${transaction[query]}
 
       # Locate node in tree to begin query.
       intr_get_location
 
+      # Set initial pointers.
+      declare -n  query=${FULL_QUERY[-1]}
+      declare -g  QUERY=${query[data]}
+      declare -gn METHOD=${transaction[method]}
+
       # Method.
-      METHOD=${transaction[method]}
       intr_call_method
    done
 
@@ -72,19 +97,20 @@ function interpret {
 
 
 function re_cache {
-   declare -p _DATA >  "$PARSEFILE"
-   declare -p _META >> "$PARSEFILE"
-   for idx in $(seq 1 ${_META[max_node_ref]}) ; do
-      declare -p "_NODE_${idx}" 2>/dev/null
-   done >> "$PARSEFILE"
+   (
+      declare -p _META
+      declare -p _DATA
+      if [[ -n ${!_NODE_*} ]] ; then
+         declare -p ${!_NODE_*}
+      fi
+   ) > "$PARSEFILE"
 }
 
 
 function intr_call_method {
-   declare -n method=$METHOD
-   case "${method[type]}" in
-      'print')    intr_print  ;;
+   case "${METHOD[type]}" in
       'write')    intr_write  ;;
+      'print')    intr_print  ;;
       'insert')   intr_insert ;;
       'update')   intr_update ;;
       'delete')   intr_delete ;;
@@ -127,49 +153,83 @@ function intr_get_location {
       # loop.
       DATA_NODE=$next
    done
-
-   # Set initial query pointer
-   declare -n query=${FULL_QUERY[-1]}
-   declare -g QUERY=${query[data]}
 }
 
 
 function intr_write {
    declare -n data_node=${METHOD[data]}
-   declare -n path=${data_node[data]}
+   declare -- path=${data_node[data]}
 
    local dir=$( dirname "$path" )
    mkdir -p "$dir"
 
    # TODO: This is a pretty shit solution. Should temporarily disable the
    # existing color, rather than re-writing the functions without it.
-   regular_print_data_type $DATA_NODE > "${dir}/${path}"
+   regular_print_data_by_type $DATA_NODE > "${dir}/${path}"
 }
 
 
 function intr_insert {
-   pass=
-   #local data_node_type=$( get_type $DATA_NODE )
-   #echo $data_node_type
+   declare -- data_node_type=$( get_type $DATA_NODE )
+   declare -n node=$DATA_NODE
+   declare -- insert_data_node=${METHOD[data]}
+
+   case $data_node_type in
+      'string')
+            raise_update_string_error
+            ;;
+      'list')
+            declare index=${#node[@]}
+            ;;
+      'dict')
+            declare index=${METHOD[index]}
+            ;;
+   esac
+
+   # Validation: duplicate key.
+   if [[ -n ${node[$index]} ]] ; then
+      raise_update_dict_error "$index"
+   fi
+
+   # TODO;XXX:
+   # This is super hacky, and I don't love how it works. We don't actually need
+   # to make a real node. We just need to append SOMETHING to the end of the
+   # FULL_QUERY, and manually set QUERY=$index. Must also shift the data path
+   # to the current node, rather than the parent. We want it to add the data
+   # to the *existing* node we're working with, not it's parent.
+   FULL_QUERY+=( _PSEUDO_QUERY )
+   DATA_PATH+=( $DATA_NODE )
+   QUERY=$index
+
+   intr_insert_by_type $insert_data_node
 }
 
 
 function intr_update {
    declare -- data_node_type=$( get_type $DATA_NODE )
-   declare -n insert_data_node=${METHOD[data]}
-   declare -- insert_data=${insert_data_node[data]}
+   declare -- insert_data_node=${METHOD[data]}
 
-   intr_insert_data $insert_data
+   # TODO: Turns out this will be a bit more of a complex operation than I
+   # though before. Need to first recursively delete everything under the
+   # existing node we are updating. But we *can't* delete the key to it...
+   # Oh wait, yes we can. Turns out update is exactly the same as a full
+   # recursive delete, followed by an insert() with the original key.
+   # Interesting.
+   intr_delete_by_type $DATA_NODE
+
+   # Then can drop the new parent node into the original location, using the
+   # original $QUERY.
+   intr_insert_by_type $insert_data_node
 }
 
 
 function intr_delete {
-   intr_delete_type $DATA_NODE
+   intr_delete_by_type $DATA_NODE
 }
 
 
 function intr_print {
-   print_data_type $DATA_NODE
+   print_data_by_type $DATA_NODE
 }
 
 #───────────────────────────────────( utils )───────────────────────────────────
@@ -184,7 +244,7 @@ function get_type {
 }
 
 #══════════════════════════════════╡ DELETE ╞═══════════════════════════════════
-function intr_delete_type {
+function intr_delete_by_type {
    local node_name=$1
    local node_type=$( get_type $node_name )
 
@@ -216,7 +276,7 @@ function intr_delete_array {
 
    for key in "${!node[@]}" ; do
       QUERY=$key                          # Set global query string
-      intr_delete_type ${node[$key]}      # Kick off recursive child deletion
+      intr_delete_by_type ${node[$key]}   # Kick off recursive child deletion
       unset node[$key]                    # Unset element from array
    done
 
@@ -236,7 +296,7 @@ function indent {
 }
 
 
-function print_data_type {
+function print_data_by_type {
    local node_name="$1"
    local node_type=$( get_type "$node_name" )
 
@@ -264,7 +324,7 @@ function print_list {
       declare child_name="${node[$idx]}"
 
       indent
-      echo -n "$(print_data_type ${child_name})"
+      echo -n "$(print_data_by_type ${child_name})"
 
       if [[ $idx -lt $(( ${#node[@]} -1 )) ]] ; then
          echo "${HI_LINK[SURROUND]},${rst} "
@@ -292,7 +352,7 @@ function print_dict {
       ((num_keys_printed++))
       indent
       echo -n "${HI_LINK[KEY]}${child_key}${rst}${HI_LINK[SURROUND]}:${rst} "
-      echo -n "$(print_data_type ${node[$child_key]})"
+      echo -n "$(print_data_by_type ${node[$child_key]})"
 
       if [[ $num_keys_printed -lt $total_keys ]] ; then
          echo "${HI_LINK[COMMA]},${rst} "
@@ -305,8 +365,8 @@ function print_dict {
    indent ; echo "${HI_LINK[SURROUND]}}${rst}"
 }
 
-#───────────────────────────────( regular print )───────────────────────────────
-function regular_print_data_type {
+#═══════════════════════════════╡ REGULAR PRINT ╞═══════════════════════════════
+function regular_print_data_by_type {
    local node_name="$1"
    local node_type=$( get_type "$node_name" )
 
@@ -334,7 +394,7 @@ function regular_print_list {
       declare child_name="${node[$idx]}"
 
       indent
-      echo -n "$(regular_print_data_type ${child_name})"
+      echo -n "$(regular_print_data_by_type ${child_name})"
 
       if [[ $idx -lt $(( ${#node[@]} -1 )) ]] ; then
          echo ", "
@@ -362,7 +422,7 @@ function regular_print_dict {
       ((num_keys_printed++))
       indent
       echo -n "${child_key}: "
-      echo -n "$(regular_print_data_type ${node[$child_key]})"
+      echo -n "$(regular_print_data_by_type ${node[$child_key]})"
 
       if [[ $num_keys_printed -lt $total_keys ]] ; then
          echo ","
@@ -376,44 +436,85 @@ function regular_print_dict {
 }
 
 #══════════════════════════════════╡ INSERT ╞═══════════════════════════════════
-function intr_insert_data {
+function intr_insert_by_type {
    local node_name=$1
    local node_type=$( get_type $node_name )
 
    case $node_type in
-      'string')         intr_insert_string $node_name ;;
-      'list'|'dict')    intr_insert_array  $node_name ;;
+      'string') intr_insert_string $node_name ;;
+      'list'|'dict') intr_insert_array  $node_name ;;
    esac
 }
 
 
-function intr_insert_list {
-   unset $1                               # Unset self.
-   declare -n parent=${DATA_PATH[-1]}     # Nameref to parent's node
-   unset parent[$QUERY]                   # Unset reference from parent
+function intr_convert_query_node {
+   declare -- node_name=$1
+   declare -- new_name=$2
+
+   # Dump existing declaration.
+   declare -- declaration=$( declare -p $node_name )
+
+   # Make it actually global. By default, all $(declare -p) dumps have the
+   # local version of the variable/array declaration.
+   declaration=$( sed -E 's,(declare\s-)[-]?([Aa])?,\1\2g,' <<< "$declaration" )
+
+   # Source it back in with the updated node name.
+   source <( echo "${declaration/${node_name}/$new_name}" )
+
+   # Remove old _QUERY node.
+   unset $node_name
+}
+
+
+function intr_insert_string {
+   declare -- node_name=$1
+
+   # Increment existing max node counter. Ensure we're not stomping on an
+   # existing data node names. Especially with two back-to-back insert
+   # operations.
+   declare -n idx=_META[max_node_ref]
+   ((++idx))
+
+   # Define new name, effectively appending to the existing data node set.
+   declare -- new_name="_NODE_${idx}"
+   intr_convert_query_node $node_name $new_name
+
+   # Replace parent's pointer to the freshly created node.
+   declare -n parent=${DATA_PATH[-1]}
+   parent[$QUERY]=$new_name
 }
 
 
 function intr_insert_array {
+   # Same sorta methodology here as in the intr_delete_array. It's very similar.
    declare -- node_name=$1
-   declare -n node=$node_name
    declare -- query=$QUERY
 
-   DATA_NODE=$node_name
+   # Increment existing max node counter. Ensure we're not stomping on an
+   # existing data node names. Especially with two back-to-back insert
+   # operations.
+   declare -n idx=_META[max_node_ref]
+   ((++idx))
+
+   # Define new name, effectively appending to the existing data node set.
+   declare -- new_name="_NODE_${idx}"
+   intr_convert_query_node $node_name $new_name
+
+   DATA_NODE=$new_name
    DATA_PATH+=( $DATA_NODE )
 
+   declare -n node=$new_name
    for key in "${!node[@]}" ; do
-      QUERY=$key                          # Set global query string
-      intr_delete_type ${node[$key]}      # Kick off recursive child deletion
-      unset node[$key]                    # Unset element from array
+      QUERY=$key
+      intr_insert_by_type ${node[$key]}
    done
 
-   # Pop self from stack, so we can remove this node from its parent.
+   # Pop self from stack.
    unset DATA_PATH[-1]
 
-   declare -n parent=${DATA_PATH[-1]}     # Reference parent element from stack
-   unset parent[$query]                   # Unset this element from its parent
-   unset $node_name                       # Unset self.
+   declare -n parent=${DATA_PATH[-1]}
+   parent[$query]=$new_name
 
+   # Restore prior global query.
    QUERY=$query
 }
