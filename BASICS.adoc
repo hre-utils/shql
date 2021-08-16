@@ -1,0 +1,7 @@
+= baSH Query Language (shql) Basics
+Marcus Aurelius <marcus [at] aurelius [dot] org>
+:source-highlighter:     pygments
+:pygments-style:         algol_nu
+:pygments-linenums-mode: table
+:toc:                    left
+:toclevels:              3

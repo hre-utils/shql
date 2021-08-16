@@ -14,7 +14,7 @@
 #               | delete
 #               | print
 #               | write
-#  insert      -> insert '(' data ')'
+#  insert      -> insert '(' [IDENTIFIER COMMA] data ')'
 #  update      -> update '(' data ')'
 #  delete      -> '(' ')'
 #  print       -> '(' ')'
@@ -438,7 +438,7 @@ function grammar_method {
             if [[ ${PEEK1[type]} == 'IDENTIFIER' ]] ; then
                munch 'IDENTIFIER'
                n[index]=${TOKEN[data]}
-               munch 'COLON'
+               munch 'COMMA'
             fi
 
             grammar_data

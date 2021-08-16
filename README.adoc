@@ -1,78 +1,177 @@
-= shql
+= baSH Query Language (shql)
+Marcus Aurelius <marcus [at] aurelius [dot] org>
+:source-highlighter:     pygments
+:pygments-style:         algol_nu
+:pygments-linenums-mode: table
+:toc:                    left
+:toclevels:              3
 
-baSH Query Language
+JSON parsing & query language written entirely in Bash.
 
 == Preface
-This project started out as described below in the _Thinkies_ section:
-a multi-functional log tracking, config file managing, application tracking utility.
-To make that work, I'd need an easy text-based database.
-JSON is the obvious choice.
-It's editable in any editor, parsable with CLI utilities (`grep`, `sed`, `awk`), and easy to read.
-
-Initially I was looking at `jq`.
+This began as a CLI utility to easily create & manage short log entries.
+For my requirements, an easily editable/readable text-based database was necessary.
+JSON is the obvious choice, with `jq` to parse & print output.
 It seemed easy to use, and already existed.
-However, it's an additional dependency, and it's not written in the Lords most venerable language--Bash.
+
+However, `jq` is an additional dependency, and it's not written in the Lords most venerable language--Bash.
 
 This is unacceptable.
 
-== Thinkies
-json based database for 'log', instead of a flat text file
-realistically we'd want a noSQL model, but I don't think we can do that.
+== Usage
+=== Installation
+Clone the repo.
 
-each application is a key in the database, properties being
-   * log[], general sequential Note(s)
-      * Note[datetime, text]
-   * additions[], config files, cron jobs, things that will need to be
-     removed on exit
+=== Operations
+The structure of all '`requests`' to `shql` are as follows:
+----
+QUERY '>' OPERATION [';' QUERY '>' OPERATION]*
+----
 
-can actually bake in the config file management of `conf` by just looking
-at a `conf{name->path, ...}` dict. Then call conf app.name, or if there's
-only one present, it uses that entry.
+All queries must start with a leading `/` to indicate the '`root`' of the data structure.
+This can be subscripted using standard dict dotted notation (`/.foo`), or list subscription (`/[0]`).
 
-'''
+Given the following dataset:
 
-Write my own .json parser.
-Seems like a fun thing to do.
-JSON -> bash -> JSON.
-Only uses dicts and lists, so pretty straightforward.
-
-Does allow me to do things that `jq`/JSON does not, like self-references.
-Can have one article refer to another.
-
+.input.json
 [source,json]
 ----
 {
-   "system": {
-      "logs": [
-         {
-            "time": "...",
-            "text": "..."
-         },
-      ],
-      "ref": [
-         {
-            "link": "<optional>",
-            "text": "...",
-            "tags": [ "tag1", "tag2" ]
-            ]
-         }
-      ],
-      "additions": [
-         {
-            "text": "...",
-            "desc": "..."
-         }
-      ],
-      "conf": {
-         "name": "path",
-         "name2": "path2"
-      }
-   },
-   "template": {
-      "logs": [],
-      "ref": [],
-      "additions": [],
-      "conf": {}
-   }
+   "foo": "bar",
+   "baz": [
+      "one",
+      "two",
+      "three"
+   ]
 }
 ----
+
+To access the value of '`foo`' our query is: `/.foo`.
+For the 1st element of '`baz`': `/.baz[0]`.
+
+Multiple operations can be written on the same line, separating them with a semicolon.
+
+[source]
+----
+/.baz > insert(); /.foo > update('BAR'); / > print()
+----
+
+
+==== print()
+===== Description
+Recursively prints the data selected by the query.
+
+===== Arguments
+Print takes no arguments.
+
+===== Example
+.Print the whole dataset
+[source]
+----
+/ > print()
+----
+
+.Print root -> baz -> [1]
+[source]
+----
+/.baz[1] > print()
+----
+
+==== write()
+===== Description
+Dumps the data selected by the query to a text file.
+
+===== Arguments
+String file path relative to the current directory.
+
+===== Example
+.Dumps entire dataset to a file
+[source]
+----
+/ > write('dataset.json')
+----
+
+==== insert()
+===== Description
+Inserts new JSON into a specified dict key, or at the end of a list.
+
+===== Arguments
+If inserting into list, only requires valid JSON input.
+
+If inserting into a dict, an IDENTIFIER is provided as the key, followed by the input JSON.
+There can be no existing data specified at `$key`, or a `KEY_ERROR` is raised.
+
+===== Example
+.List insert
+[source]
+----
+/.baz > insert('five'); /.baz > insert(['a', 'new', 'list'])
+----
+
+.Dict insert
+[source]
+----
+/.foo > insert(new, 'VALUE')
+----
+
+==== update()
+===== Description
+Inserts new JSON into a specified query location.
+The existing node is recursively deleted prior to the new node is inserted in its place.
+
+===== Arguments
+JSON data.
+
+===== Example
+.Nuke root -> baz -> *, replace with 'BAZ'
+[source]
+----
+/.baz > update('BAZ')
+----
+
+==== delete()
+===== Description
+Recursively deletes the data selected by the query.
+Deleting the root node may make the database unusable (WORK IN PROGRESS).
+
+===== Arguments
+Delete takes no arguments.
+
+===== Example
+.Specific node deletion
+[source]
+----
+/.baz[0] > delete()
+----
+
+
+== Features
+There are some included features that .json itself does not include.
+
+=== Comments
+Comment away!
+Single-line comments are supported, beginning with `#`, ending at a newline.
+
+=== Commas
+Commas may be used after the last element in a list, or dict items.
+
+=== Identifiers
+COMING SOON.
+
+=== Error Output
+Helpful, specific error output.
+Line & column number is always provided.
+Where possible arrows are drawn to the specific offending character.
+
+Unlike many utilities, this project strives to collect as many errors as possible before printing & exiting.
+
+
+== The Journey
+=== History
+=== Writing a Lexer
+=== Writing a Parser
+=== Writing a Lexer, Again
+=== Writing a Parser, Again
+
+== TODO
+* [ ] Allow INTEGERs as a valid data type
