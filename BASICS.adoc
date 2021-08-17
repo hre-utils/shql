@@ -26,14 +26,178 @@ It also makes (some) simple operations equally monsterously more difficult.
 To fill gaps in the missing functionality, we need to abuse some of the exceptions to this rule.
 
 ==== Nesting
-Bash *does* have data types.
-There are indexed arrays (`declare -a list`), and associative arrays (`declare -A dict`).
+Bash _does_ have data types.
 Integers may also be declared (`declare -i int`).
-They are technically still strings, though behave differently when non-numbers are declared as int (they have an '`integer value`' of 0).
+There are indexed arrays (`declare -a list`), and associative arrays (`declare -A dict`).
+However, arrays cannot be nested. You may only define flat dicts & lists.
 
-I would posit an argument can be made for counting functions as another data type, especially when dynamically generated.
-But that's for (https://github.com/hre-utils/blog/blob/main/2021-04-17.adoc)[another time].
+.List
+[source,bash]
+----
+declare -a indexed_array=(
+   'item1'
+   'item2'
+)
+----
+
+.Dict
+[source,bash]
+----
+declare -A associative_array=(
+   [item1]='val1'
+   [item2]='val2'
+)
+----
 
 ==== Arguments
+Due to the text-based nature of Bash, passing arguments to functions can be difficult.
+You cannot pass a list to a function as a parameter.
+You can expand it as follows, which maintains the '`words`', but that leads to further complications.
+
+[source,bash]
+----
+fn "${indexed_array[@]}"
+----
+
+If you want to pass two arrays, you'd need to additionally specify a preceeding length for each array.
+Or use another system to differentiate them.
+
+Passing in an expanded associative array is sufficiently more rough.
+
 === Scope
+There is basic variable scope within bash.
+Using `declare` or `local` within a function defines a variable scoped locally to that function.
+There are no file-scoped variables.
+
+All other variables are global. Kinda.
+
+=== Forks
+There is oddness when running processes in a subshell (indicated by `(...)`, or `$(...)` to capture the output).
+
+Subshells are forked, with a duplicate of your environment at the time of forking.
+Any changes made within the subshell are local exclusively to that shell.
+They are _not_ preserved or copied back when the process ends.
+
+Thus, commands or functions that must be run within a subshell may not alter parameters of your script.
+They cannot set variables, increment a counter, etc.
+
 === Classes
+The traditional approach to building a lexer, or syntax tree, is class based.
+One creates a class representing Tokens, or Tree Nodes, then creates instances of that class.
+
+Bash does not have classes.
+And due to the "`can't nest arrays`" issue, it's difficult to make a sorta pseudo class out of data + method lists.
+
+== So... What Now?
+Thankfully (or maybe not, depending who you ask) bash provides a wide range of creative solutions to address all the above problems.
+
+=== Namerefs
+A nameref is simply a pointer, or a reference, to another variable.
+Modifying the nameref variable will act as if the the operation was performed on the referenced variable.
+A brief example:
+
+[source,bash]
+----
+# Create regular string.
+var='this is a string'
+
+# Create reference to `var`, identified by `foo`.
+declare -n foo=var
+
+# Calling $foo is now identical to calling $var
+echo $foo  # -> 'this is a string'
+----
+
+Namerefs are the absolute core of bash sneekiness and tomfoolery.
+Passing two dicts to a function?
+Easy.
+
+[source,bash]
+----
+declare -A d1=( # ... )
+declare -A d2=( # ... )
+
+function fn {
+   declare -n dict1=$1
+   declare -n dict2=$2
+   # ... do stuff here
+}
+
+fn 'd1' 'd2'
+----
+
+=== Nesting
+When [ab]using namerefs, we're able to now nest arrays.
+Simply create an array... of pointers to the new arrays.
+
+[source,bash]
+----
+# Declare pointers to child arrays.
+declare -a parent=( child1 child2 )
+
+# Declare child arrays themselves.
+declare -a child1=( 'child_var_1' 'child_var_2' )
+declare -a child2=( 'child2_var_1' 'child2_var_2' )
+
+# To traverse...
+for child_array_name in "${parent[@]}" ; do
+   echo "$child_array_name: "
+   declare -n child_array=${parent[$child_array_name]}
+   for child_var in "${child_array[@]}" ; do
+      echo "$child_var"
+   done
+done
+
+# The above prints:
+#> child1
+#> child_var_1
+#> child_var_2
+#> child2
+#> child2_var_1
+#> child2_var_2
+----
+
+=== Data Types
+Neato burrito.
+Now we can make references to variables by their names, but we need to know the type ahead of time.
+What if the parent level list contains pointers to integers, associative arrays, strings, and more indexed arrays?
+
+No problem.
+
+Create function(s) to handle printing each type.
+Determine the type of the variable the nameref points to.
+Call its associated print function.
+
+[source,bash]
+----
+function print_by_type {
+   local var_name=$1
+   local var_type=$( declare -p $var_name | awk '{print $2' )
+
+   # The above is a bit of silliness. `declare -p` will display the attributes 
+   # and value of a variable in the following format:
+   #
+   #> $ var='this'
+   #> $ declare -p var
+   #> declare -- var="this"
+   #
+   # By awking the 2nd word ('--'), we can determine the type of the variable
+   # based on its flags.
+
+   case $var_type in
+      '--')  print_string ;;
+      '-a')  print_list   ;;
+      '-A')  print_dict   ;;
+      *) raise_unhandled_type_error
+   esac
+}
+----
+
+== Structure
+=== Lexing
+=== Parsing
+=== Uhhh
+
+=== Queries
+=== Lexing, Again
+=== Parsing, Again
