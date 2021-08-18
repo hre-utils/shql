@@ -175,3 +175,6 @@ Unlike many utilities, this project strives to collect as many errors as possibl
 
 == TODO
 * [ ] Allow INTEGERs as a valid data type
+* [ ] All around code cleanup
+   ** [ ] Consistency in variable & function names
+   ** [ ] Add comments where missing

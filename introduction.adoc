@@ -19,17 +19,17 @@ There are other programming and design challenges, but those will be present in 
 === Everything is text
 It is very often one hear the phrase `"everything is text"` in the *NIX world, especially in bash.
 The upside is text processing languages (`awk`, `sed`) can interact with nearly anything,
-and chaining a sequence of commands becomes monstrously powerful.
+and chaining a sequence of commands becomes very powerful.
 
-It also makes (some) simple operations equally monstrously more difficult.
+It also makes (some) simple operations equally more difficult.
 
 To fill gaps in the missing functionality, we need to abuse some of the exceptions to this rule.
 
 ==== Nesting
-Bash _does_ have data types.
-Integers may also be declared (`declare -i int`).
-There are indexed arrays (`declare -a list`), and associative arrays (`declare -A dict`).
-However, arrays cannot be nested. You may only define flat dicts & lists.
+Bash _does_ have data types, which are declared with flags passed to the `declare` keyword.
+Integers are declared with `-a`, indexed arrays with `-a`, and associative arrays with `-A`.
+However, arrays cannot be nested.
+You may only define flat dicts & lists.
 
 .List
 [source,bash]
