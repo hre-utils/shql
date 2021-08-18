@@ -19,9 +19,9 @@ There are other programming and design challenges, but those will be present in 
 === Everything is text
 It is very often one hear the phrase `"everything is text"` in the *NIX world, especially in bash.
 The upside is text processing languages (`awk`, `sed`) can interact with nearly anything,
-and chaining a sequence of commands becomes monsterously powerful.
+and chaining a sequence of commands becomes monstrously powerful.
 
-It also makes (some) simple operations equally monsterously more difficult.
+It also makes (some) simple operations equally monstrously more difficult.
 
 To fill gaps in the missing functionality, we need to abuse some of the exceptions to this rule.
 
@@ -59,7 +59,7 @@ You can expand it as follows, which maintains the '`words`', but that leads to f
 fn "${indexed_array[@]}"
 ----
 
-If you want to pass two arrays, you'd need to additionally specify a preceeding length for each array.
+If you want to pass two arrays, you'd need to additionally specify a preceding length for each array.
 Or use another system to differentiate them.
 
 Passing in an expanded associative array is sufficiently more rough.
@@ -93,7 +93,7 @@ Thankfully (or maybe not, depending who you ask) bash provides a wide range of c
 
 === Namerefs
 A nameref is simply a pointer, or a reference, to another variable.
-Modifying the nameref variable will act as if the the operation was performed on the referenced variable.
+Modifying the nameref variable will act as if the operation was performed on the referenced variable.
 A brief example:
 
 [source,bash]
@@ -174,7 +174,7 @@ function print_by_type {
    local var_name=$1
    local var_type=$( declare -p $var_name | awk '{print $2' )
 
-   # The above is a bit of silliness. `declare -p` will display the attributes 
+   # The above is a bit of silliness. `declare -p` will display the attributes
    # and value of a variable in the following format:
    #
    #> $ var='this'
@@ -194,9 +194,147 @@ function print_by_type {
 ----
 
 == Structure
+With namerefs out of the way, creating tokens and syntax tree nodes feels sufficiently more approachable.
+
 === Lexing
+Bash's built-in support for text-based pattern matching makes lexing straightforward.
+
+I'll be keeping the computer science relatively terse.
+Both because I want to minimize the length of this article, and because I can't claim to understand it very well.
+Lexing, in brief, is iterating character by character through an input file, and categorizing sequences of text into "Tokens".
+
+For example, this short piece of text...
+
+[source,text]
+----
+let var='val'
+----
+
+\... may generate the following Tokens:
+
+[source]
+----
+Token(type: 'DECLARATION', 'value': 'let')
+Token(type: 'IDENTIFIER',  'value': 'var')
+Token(type: 'STRING',      'value': 'val')
+----
+
+Tokens allow us to express a structure for how data should _look_.
+
+Creating a bare bones lexer in bash requires a few pieces.
+
+==== Pointers
+Due the scoping of subshells, we cannot call a function that modifies state, _and_ returns an output value.
+An easy way to circumvent this is global pointers.
+
+As we iterate through the text file, `$CURRENT` is updated to always refer to the current character, while `$PEEK` is the subsequent one.
+Some operations require checking one or two characters ahead.
+For example, if `$CURRENT` currently is an `=`, is the token type _EQUALS_?
+Not necessarily.
+It's dependent on the next character: maybe a `>`, or even a second `=`.
+
+Some Tokens can be quite long, such as strings.
+Upon hitting an opening quotation mark, we must seek 'til the closing quote, meanwhile appending all data to the `$BUFFER`.
+The Token's value is set to the `$BUFFER` contents, and it is reset.
+
+To ensure the uniqueness of our Token names, a global integer (`$TOKEN_NUM`) is declared,.
+It is incremented before the instantiation of each token, ensuring we don't stomp on previous ones.
+
+==== Tokens
+A Token is no more than a globally defined dictionary, which is appended to the `TOKENS` array.
+A basic Token creation function looks like this:
+
+[source,bash]
+----
+function Token {
+      (( ++TOKEN_NUM ))
+
+      # Create unique token *name*, append to TOKENS list.
+      local token_name="TOKEN_${TOKEN_NUM}"
+      TOKENS+=( $token_name )
+
+      # Create global token itself, and a local nameref
+      declare -Ag $token_name
+      declare -n  token=$token_name
+
+      # Assign data based passed in from calling function.
+      token[type]="$1"
+      token[value]="$2"
+}
+----
+
+==== The Lexer
+Thus, a very basic lexer:
+
+[source,bash]
+----
+function lex {
+   # To make iterating tokens w/ lookahead a little easier, first read the file
+   # contents into an array. This allows for trivial seek in either direction.
+   declare -ag CHARRAY
+   while read -rN1 c ; do
+      CHARRAY+=( "$c" )
+   done < "$INPUT_FILE"
+
+   while [[ -n $PEEK ]] ; do
+      advance
+      # Little function that steps us through the ${CHARRAY[@]}, and sets
+      # $CURRENT/$PEEK values to the current/next characters.
+
+      # Skip whitespace.
+      [[ "$CURRENT" =~ [[:space:]] ]] && continue
+
+      # Symbols.
+      case "$CURRENT" in
+         ';')  TOKEN   'SEMI' "$CURRENT" &&  continue ;;
+         ':')  TOKEN  'COLON' "$CURRENT" &&  continue ;;
+         '.')  TOKEN 'PERIOD' "$CURRENT" &&  continue ;;
+         # ...
+      esac
+
+      # Strings.
+      if [[ "$CURRENT" =~ [\"\'] ]] ; then
+         string "$CURRENT"
+         # ^-- Nums all characters, after the initial quote, until it hits the
+         # closing quotation. The intermediate characters are added to the
+         # string $BUFFER.
+
+         TOKEN 'STRING' "$BUFFER"
+      fi
+
+      # If we've hit a character that's not covered by our lexer, it's invalid.
+      # We'll want to log that somehow. For the scope of this project, it's
+      # sufficient to add an ERROR token to the token stream, which can be
+      # caught at/before the parser. This approach allows us to collect *all*
+      # potential errors in lexing, rather than blowing up at the first one.
+      TOKEN 'ERROR' "$CURRENT"
+   done
+}
+----
+
+The end result will be a series of globally defined Tokens, whose names will be stored sequentially in the `$TOKENS` array.
+
 === Parsing
+Parsing is sufficiently more complex to explain given the intent of this document.
+I will do my best, but '`real`' parsing operations are nearing the limit of my CS knowledge.
+
+We need to turn our list of Tokens into something meaningful.
+Intrinsically they have no significance, nor can any operations be performed upon them.
+The parser, following a deterministic set of rules, translates Tokens into a "`syntax tree`".
+
+%% *CURRENT* %%
+
+
 === Uhhh
+We've successfully read our input JSON, lexed it into Tokens, and parsed it into a bash-compatible representation.
+So we're done right?
+
+Uhh, no.
+
+Now that the data is IN Bash, we'll need some means of querying it.
+That is, performing standard operations upon the whole (or subsets of) the data.
+"`Print this section`", "`delete this key`", etc..
+Time to repeat the entire process above, but for a query language of our own design.
 
 === Queries
 === Lexing, Again
