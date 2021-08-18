@@ -14,7 +14,7 @@
 #               | delete
 #               | print
 #               | write
-#  insert      -> insert '(' [IDENTIFIER COMMA] data ')'
+#  insert      -> insert '(' STRING|INTEGER COMMA data ')'
 #  update      -> update '(' data ')'
 #  delete      -> '(' ')'
 #  print       -> '(' ')'
@@ -430,21 +430,20 @@ function grammar_method {
             n[data]=$AST_NODE
             ;;
       'insert')
-            # TODO;XXX:
-            # Kinda hate that this is the way you have to do things, but it
-            # allows us to more easily allow for an optional index parameter,
-            # while still letting you insert data into lists without needing to
-            # pass any extra parameter.
-            if [[ ${PEEK1[type]} == 'IDENTIFIER' ]] ; then
-               munch 'IDENTIFIER'
-               n[index]=${TOKEN[data]}
-               munch 'COMMA'
-            fi
+            munch 'STRING,INTEGER'
+            n[index]=${TOKEN[data]}
+            n[index_type]=${TOKEN[type]}
+
+            munch 'COMMA'
 
             grammar_data
             n[data]=$AST_NODE
             ;;
       'update')
+            grammar_data
+            n[data]=$AST_NODE
+            ;;
+      'prepend'|'append')
             grammar_data
             n[data]=$AST_NODE
             ;;

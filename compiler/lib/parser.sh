@@ -285,10 +285,12 @@ function grammar_dict {
 
 #═══════════════════════════════════╡ CACHE ╞═══════════════════════════════════
 function dump_nodes {
-   _META[max_node_ref]=$GLOBAL_AST_NUMBER
-   declare -p _META
-   declare -p _DATA
-   declare -p ${!_NODE_*}
+   (
+      _META[max_node_ref]=$GLOBAL_AST_NUMBER
+      declare -p _META
+      declare -p _DATA
+      declare -p ${!_NODE_*}
+   ) | sort -V -k3
 }
 
 

@@ -56,7 +56,7 @@ function raise_type_error {
 }
 
 
-function raise_update_dict_error {
+function raise_insert_dict_error {
    echo -n  "Key Error: "
    echo -ne "Key ${byl}${1@Q}${rst} already exists. "
    echo -e  "Perhaps you meant ${yl}update()${rst}?"
@@ -64,12 +64,20 @@ function raise_update_dict_error {
 }
 
 
-function raise_update_string_error {
+function raise_insert_string_error {
    echo -n  "Type Error: "
    echo -ne "Unable to insert into a string. "
    echo -e  "Perhaps you meant ${yl}update()${rst}?"
    exit -11
 }
+
+function raise_insert_list_index_error {
+   echo -n  "Index Error: "
+   echo -e  "Index ${byl}[${1}]${rst} out of bounds."
+   echo -e  "Perhaps you meant ${yl}append()${rst} or ${yl}prepend()${rst}?"
+   exit -12
+}
+
 
 #════════════════════════════════╡ INTERPRETER ╞════════════════════════════════
 function interpret {
@@ -103,17 +111,19 @@ function re_cache {
       if [[ -n ${!_NODE_*} ]] ; then
          declare -p ${!_NODE_*}
       fi
-   ) > "$PARSEFILE"
+   ) | sort -V -k3 > "$PARSEFILE"
 }
 
 
 function intr_call_method {
    case "${METHOD[type]}" in
-      'write')    intr_write  ;;
-      'print')    intr_print  ;;
-      'insert')   intr_insert ;;
-      'update')   intr_update ;;
-      'delete')   intr_delete ;;
+      'write')    intr_write   ;;
+      'print')    intr_print   ;;
+      'insert')   intr_insert  ;;
+      'update')   intr_update  ;;
+      'delete')   intr_delete  ;;
+      'append')   intr_append  ;;
+      'prepend')  intr_prepend ;;
    esac
 }
 
@@ -170,26 +180,61 @@ function intr_write {
 
 
 function intr_insert {
-   declare -- data_node_type=$( get_type $DATA_NODE )
    declare -n node=$DATA_NODE
+   declare -- data_node_type=$( get_type $DATA_NODE )
+
    declare -- insert_data_node=${METHOD[data]}
+   declare -- index=${METHOD[index]}
 
    case $data_node_type in
       'string')
-            raise_update_string_error
-            ;;
-      'list')
-            declare index=${#node[@]}
-            ;;
-      'dict')
-            declare index=${METHOD[index]}
-            ;;
-   esac
+               raise_insert_string_error
+               ;;
 
-   # Validation: duplicate key.
-   if [[ -n ${node[$index]} ]] ; then
-      raise_update_dict_error "$index"
-   fi
+      'list')
+               # Validation: must be numerical index
+               if [[ ${METHOD[index_type]} != 'INTEGER' ]] ; then
+                  raise_type_error "${METHOD[type]} subscription" 'list'
+               fi
+
+               # Validation: must be within bounds
+               local -i min=$(( -1 * ${#node[@]} ))
+               local -i max=$(( ${#node[@]} -1 ))
+               if [[ $index -lt $min || $index -gt $max ]] ; then
+                  raise_insert_list_index_error "$index"
+               fi
+
+               # We need to shift all elements from node[$index] up one, making
+               # space to insert the node into the middle. I see two ways of
+               # doing this:
+               #  1. Shift up, insert at $index
+               #     a. Save the upper & lower halves of the array
+               #     b. Set the array to equal (LOWER dummy_var UPPER)
+               #     c. Unset the dummy var, leaving the spot open
+               #  2. Iter backwards, move everything up
+               #     a. Get length of the array
+               #     b. Iter through decrementing until we hit the $index
+               #     c. Shift every element's $index +1
+
+               declare -i remaining=$(( ${#node[@]} - index ))
+               declare -a lower=( "${node[@]::$index}" )
+               declare -a upper=( "${node[@]:$index:$remaining}" )
+
+               node=( "${lower[@]}"  'placeholder'  "${upper[@]}" )
+               unset node[$index]
+               ;;
+
+      'dict')
+               if [[ ${METHOD[index_type]} != 'STRING' ]] ; then
+                  raise_type_error "${METHOD[type]} subscription" 'list'
+               fi
+
+               # Validation: duplicate dict key.
+               if [[ -n ${node[$index]} ]] ; then
+                  raise_insert_dict_error "$index"
+               fi
+               ;;
+   esac
 
    # TODO;XXX:
    # This is super hacky, and I don't love how it works. We don't actually need
@@ -203,6 +248,7 @@ function intr_insert {
 
    intr_insert_by_type $insert_data_node
 }
+
 
 
 function intr_update {
@@ -231,6 +277,47 @@ function intr_delete {
 function intr_print {
    print_data_by_type $DATA_NODE
 }
+
+
+function intr_append {
+   declare -n node=$DATA_NODE
+
+   declare -- data_node_type=$( get_type $DATA_NODE )
+   declare -- insert_data_node=${METHOD[data]}
+
+   # Validation: must be list.
+   if [[ $data_node_type != 'list' ]] ; then
+      raise_type_error 'append()' $data_node_type
+   fi
+
+   FULL_QUERY+=( _PSEUDO_QUERY )
+   DATA_PATH+=( $DATA_NODE )
+   QUERY=${#node[@]}
+
+   intr_insert_by_type $insert_data_node
+}
+
+
+function intr_prepend {
+   declare -n node=$DATA_NODE
+
+   declare -- data_node_type=$( get_type $DATA_NODE )
+   declare -- insert_data_node=${METHOD[data]}
+
+   # Validation: must be list.
+   if [[ $data_node_type != 'list' ]] ; then
+      raise_type_error 'prepend()' $data_node_type
+   fi
+
+   node=( 'placeholder' "${node[@]}" )
+
+   FULL_QUERY+=( _PSEUDO_QUERY )
+   DATA_PATH+=( $DATA_NODE )
+   QUERY=0
+
+   intr_insert_by_type $insert_data_node
+}
+
 
 #───────────────────────────────────( utils )───────────────────────────────────
 function get_type {

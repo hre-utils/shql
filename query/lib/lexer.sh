@@ -25,6 +25,8 @@ declare -A KEYWORDS=(
    [insert]=true
    [update]=true
    [delete]=true
+   [append]=true
+   [prepend]=true
 )
 
 function print_tokens {
