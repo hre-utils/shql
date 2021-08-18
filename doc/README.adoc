@@ -1,0 +1,180 @@
+= baSH Query Language (shql)
+Marcus Aurelius <marcus [at] aurelius [dot] org>
+:source-highlighter:     pygments
+:pygments-style:         algol_nu
+:pygments-linenums-mode: table
+:toc:                    left
+:toclevels:              3
+
+JSON parsing & query language written entirely in Bash.
+
+== Preface
+This began as a CLI utility to easily create & manage short log entries.
+For my requirements, an easily editable/readable text-based database was necessary.
+JSON is the obvious choice, with `jq` to parse & print output.
+It seemed easy to use, and already existed.
+
+However, `jq` is an additional dependency, and it's not written in the Lords most venerable language--Bash.
+
+This is unacceptable.
+
+== Usage
+=== Installation
+Clone the repo.
+
+=== Operations
+The structure of all '`requests`' to `shql` are as follows:
+----
+QUERY '>' OPERATION [';' QUERY '>' OPERATION]*
+----
+
+All queries must start with a leading `/` to indicate the '`root`' of the data structure.
+This can be subscripted using standard dict dotted notation (`/.foo`), or list subscription (`/[0]`).
+
+Given the following dataset:
+
+.input.json
+[source,json]
+----
+{
+   "foo": "bar",
+   "baz": [
+      "one",
+      "two",
+      "three"
+   ]
+}
+----
+
+To access the value of '`foo`' our query is: `/.foo`.
+For the 1st element of '`baz`': `/.baz[0]`.
+
+Multiple operations can be written on the same line, separating them with a semicolon.
+
+[source]
+----
+/.baz > insert(); /.foo > update('BAR'); / > print()
+----
+
+
+==== print()
+===== Description
+Recursively prints the data selected by the query.
+
+===== Arguments
+Print takes no arguments.
+
+===== Example
+.Print the whole dataset
+[source]
+----
+/ > print()
+----
+
+.Print root -> baz -> [1]
+[source]
+----
+/.baz[1] > print()
+----
+
+==== write()
+===== Description
+Dumps the data selected by the query to a text file.
+
+===== Arguments
+String file path relative to the current directory.
+
+===== Example
+.Dumps entire dataset to a file
+[source]
+----
+/ > write('dataset.json')
+----
+
+==== insert()
+===== Description
+Inserts new JSON into a specified dict key, or at the end of a list.
+
+===== Arguments
+If inserting into list, only requires valid JSON input.
+
+If inserting into a dict, an IDENTIFIER is provided as the key, followed by the input JSON.
+There can be no existing data specified at `$key`, or a `KEY_ERROR` is raised.
+
+===== Example
+.List insert
+[source]
+----
+/.baz > insert('five'); /.baz > insert(['a', 'new', 'list'])
+----
+
+.Dict insert
+[source]
+----
+/.foo > insert(new, 'VALUE')
+----
+
+==== update()
+===== Description
+Inserts new JSON into a specified query location.
+The existing node is recursively deleted prior to the new node is inserted in its place.
+
+===== Arguments
+JSON data.
+
+===== Example
+.Nuke root -> baz -> *, replace with 'BAZ'
+[source]
+----
+/.baz > update('BAZ')
+----
+
+==== delete()
+===== Description
+Recursively deletes the data selected by the query.
+Deleting the root node may make the database unusable (WORK IN PROGRESS).
+
+===== Arguments
+Delete takes no arguments.
+
+===== Example
+.Specific node deletion
+[source]
+----
+/.baz[0] > delete()
+----
+
+
+== Features
+There are some included features that .json itself does not include.
+
+=== Comments
+Comment away!
+Single-line comments are supported, beginning with `#`, ending at a newline.
+
+=== Commas
+Commas may be used after the last element in a list, or dict items.
+
+=== Identifiers
+COMING SOON.
+
+=== Error Output
+Helpful, specific error output.
+Line & column number is always provided.
+Where possible arrows are drawn to the specific offending character.
+
+Unlike many utilities, this project strives to collect as many errors as possible before printing & exiting.
+
+
+== The Journey
+=== History
+=== Writing a Lexer
+=== Writing a Parser
+=== Writing a Lexer, Again
+=== Writing a Parser, Again
+
+== TODO
+* [ ] Allow INTEGERs as a valid data type
+* [ ] All around code cleanup
+   ** [ ] Consistency in variable & function names
+   ** [ ] Add comments where missing

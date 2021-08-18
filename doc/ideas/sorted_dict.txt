@@ -1,0 +1,124 @@
+dict grammar:
+
+   dict        -> '{' assignment (COMMA assignment)? (COMMA)? '}'
+   assignment  -> string COLON data
+
+in which it roughly translates to the following bash:
+
+   dict           declare -a _NODE_1=(
+   pointer1          '_NODE_2'
+   pointer2          '_NODE_3'
+                  )
+
+   assignment     declare -A _NODE_2=(
+                     [key]=_NODE_4
+                     [val]=_NODE_5
+                  )
+
+   assignment     declare -A _NODE_3=(
+                     [key]=_NODE_6
+                     [val]=_NODE_7
+                  )
+
+   key node1      declare -- _NODE_4="key_string_here"
+   val node1      declare XX _NODE_5=$VAL_OR_NODE
+
+   ...
+
+the val nodes may either be a string termination node, or a list/dict with
+further pointers.
+
+using a list of assignment nodes allows us to maintain order with dicts, though
+we lose the ability to initially test if a key has been re-used. There would
+need to be a second parsing phase to simplify the above structure, and reduce to
+
+   dict           declare -A _NODE_1=(
+                     ['string_key']=_NODE_5
+                     ['string_key2']=_NODE_7
+                  )
+
+   val node1      declare XX _NODE_5=$VAL_OR_NODE
+   val node2      declare XX _NODE_7=$VAL_OR_NODE
+
+at this "reducing" stage, we check to ensure we haven't made any oopsies.
+
+---
+
+upon coming back to this, the above reduction stage would not be able to
+actually consolidate into a single dict, 'cause we'd immediately lose the order.
+
+also makes it difficult to determine the type of the node, as both dicts and
+lists are indexed arrays now.
+
+could create a parallel data structure when reading dicts in, as a list with the
+key order--when writing data back we reference the list, and append any new
+elements to the end.
+
+would need to then re-construct the key order list, as elements may have been
+removed.
+
+input:
+---
+{
+   'one': 1,
+   'two': 2,
+   'three': 3
+}
+
+
+parsed:
+---
+declare -A N1=(
+   [one]=N2
+   [two]=N3
+   [three]=N4
+)
+
+declare -a N1_ORDER=(
+   'one'
+   'two'
+   'three'
+)
+
+declare -- N2="1"
+declare -- N3="2"
+declare -- N4="3"
+
+
+printing:
+---
+function contains {
+   declare -n arr=$1
+   declare -- key=$2
+
+   for idx in "${!arr[@]}" ; do
+      val="${arr[$idx]}"
+      if [[ "$val" == "$key" ]] ; then
+         echo $idx ; return 0
+      fi
+   done
+
+   return 1
+}
+
+
+declare -- node_name=$1
+declare -n node=$node_name
+
+if [[ $node_type == 'dict' ]] ; then
+   declare -n order="${node_name}_ORDER"
+
+   for pos_key in "${order[@]}" ; do
+      # Check to ensure key still exists, and was not deleted prior to this
+      # print operation.
+      if [[ -n ${node[$pos_key]} ]] ; then
+         indent
+         echo "${pos_key}: $(print_type ${node[$pos_key]})"
+      fi
+   done
+
+   for child_key in "${!node[@]}" ; do
+      [[ $(contains $node_name $child_key) ]] && continue
+      echo "${child_key}: $(print_type ${node[$child_key]})"
+   done
+fi
