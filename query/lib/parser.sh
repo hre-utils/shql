@@ -422,6 +422,11 @@ function grammar_method {
    munch 'KEYWORD'
    method=${TOKEN[data]}
 
+   # Operations that do not take an argument:
+   #  - len()
+   #  - print()
+   #  - delete()
+
    munch 'L_PAREN'
    case $method in
       'write')

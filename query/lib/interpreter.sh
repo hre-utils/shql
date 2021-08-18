@@ -117,6 +117,7 @@ function re_cache {
 
 function intr_call_method {
    case "${METHOD[type]}" in
+      'len')      intr_len     ;;
       'write')    intr_write   ;;
       'print')    intr_print   ;;
       'insert')   intr_insert  ;;
@@ -163,6 +164,17 @@ function intr_get_location {
       # loop.
       DATA_NODE=$next
    done
+}
+
+
+function intr_len {
+   declare -n node=$DATA_NODE
+   declare -- data_node_type=$( get_type $DATA_NODE )
+
+   case $data_node_type in
+      'string')       echo ${#node}    ;;
+      'list'|'dict')  echo ${#node[@]} ;;
+   esac
 }
 
 
