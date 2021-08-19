@@ -214,6 +214,7 @@ let var='val'
 ----
 Token(type: 'DECLARATION', 'value': 'let')
 Token(type: 'IDENTIFIER',  'value': 'var')
+Token(type: 'SYMBOL',      'value': '=')
 Token(type: 'STRING',      'value': 'val')
 ----
 
@@ -486,6 +487,28 @@ That is, performing standard operations upon the whole (or subsets of) the data.
 "`Print this section`", "`delete that key`", etc..
 Time to repeat the entire process above, but for a query language of our own design.
 
+
 === Queries
+I've been unsatisfied by a number of query languages that I've seen, and decided this was my opportunity to needlessly reinvent the wheel.
+After spending a week or so flopping around on square wheels, I returned to a rather traditional query syntax, save for one change:
+the root of the database being represented by a slash.
+Root == '/'.
+Thus spake Unix.
+
+I considered Python's approach of using square brackets for all subscription.
+Lists would only contain integer values (`/[0]`), while dicts would contain strings (`/['foo']`).
+However I believe this makes a query unnecessarily cumbersome to type.
+By the fact that keys must be valid shell 'words', there may be no spaces.
+Thus, there's realistically no reason to use a string over an identifier.
+Why type extra brackets when periods are a good visual and lexical separator?
+
+Indexing arrays with brackets serves as a clear visual distinction.
+It becomes very easy looking at a query such as `/.foo[0]` to instantly identify the parts, and types.
+
 === Lexing, Again
+Our second lexer is nearly the same as the first.
+The only distinction is that it must support the 'keywords' of our query methods (`print()`, `update()`, etc.).
+
+%% *CURRENT* %%
+
 === Parsing, Again
