@@ -54,9 +54,11 @@ for f in "${PROGDIR}"/lib/* ; do
 done
 
 # Cached?
-[[ -e "$HASHFILE" ]] && exit 0
+#[[ -e "$HASHFILE" ]] && exit 0
 
 # Compile.
 lex
 parse
 cache_ast
+
+dump_nodes

@@ -5,11 +5,25 @@
 #  dump_nodes
 #  cache_ast
 #  parse
+#
+# grammar:
+#           root -> dict EOF
+#                 | list EOF
+#
+#           list -> '[' data (COMMA data)* (COMMA)? ']'
+#
+#           dict -> '{' assignment (COMMA assignment)* (COMMA)? '}'
+#
+#     assignment -> string COLON data
+#
+#           data -> dict
+#                 | list
+#                 | STRING
+#                 | NUMBER
 
 #══════════════════════════════════╡ GLOBAL ╞═══════════════════════════════════
-# tNAME is the tname of the current token.
 # TOKEN is a nameref to the token itself.
-declare -- TOKEN tNAME tPEEK1 tPEEK2
+declare -- TOKEN tPEEK1 tPEEK2
 declare -i tIDX=-1
 # Kinda dumb and hacky. Starting at (-1) so the first call to advance() will
 # increment by 1, thus reading the *next* character, the first.
@@ -45,7 +59,7 @@ declare -A _META
 function raise_parse_error {
    local loc="[${TOKEN[lineno]}:${TOKEN[colno]}]"
    echo -n "Parse Error: ${loc} "
-   echo -e "Expected ${byl}${@}${rst}, received ${TOKEN[type]}."
+   echo -e "Expected ${byl}${@}${rst}, received ${byl}${TOKEN[type]}${rst}."
 
    exit -2
 }
@@ -57,17 +71,25 @@ function raise_duplicate_key_error {
    echo -e "Key ${byl}${1@Q}${rst} already used. Overwriting previous."
 }
 
+
+function raise_invalid_key_error {
+   local loc="[${TOKEN[lineno]}:${TOKEN[colno]}]"
+   echo -n "Key Error: ${loc} "
+   echo -e "Key ${byl}${1@Q}${rst} format invalid. Must be a bash 'word'."
+
+   exit -3
+}
+
 #───────────────────────────────────( utils )───────────────────────────────────
 function t_advance {
    # Advance position in file, and position in line.
    ((tIDX++))
 
    # Reset pointers.
-   TOKEN= tNAME= tPEEK1= tPEEK2=
+   TOKEN= tPEEK1= tPEEK2=
 
    if [[ $tIDX -lt ${#TOKENS[@]} ]] ; then
-      tNAME=${TOKENS[tIDX]}
-      declare -gn TOKEN=$tNAME
+      declare -gn TOKEN=${TOKENS[tIDX]}
    fi
 
    # Lookahead +1.
@@ -146,15 +168,25 @@ function check_lex_errors {
    $ERROR_FOUND && exit -1
 }
 
+function validate_key {
+   declare -- key="$1"
+   [[ "$key" =~ ^[[:alpha:]_][[:alnum:]_]*$ ]]
+}
+
 #═════════════════════════════════╡ AST NODES ╞═════════════════════════════════
+function mkInteger {
+   ((GLOBAL_AST_NUMBER++))
+   local node_name="_NODE_${GLOBAL_AST_NUMBER}"
+   declare -gi $node_name
+   declare -g  AST_NODE="$node_name"
+}
+
+
 function mkString {
    ((GLOBAL_AST_NUMBER++))
    local node_name="_NODE_${GLOBAL_AST_NUMBER}"
    declare -g $node_name
    declare -g AST_NODE="$node_name"
-
-   # DEBUG, print output.
-   #declare -p ${node_name}
 }
 
 
@@ -162,10 +194,13 @@ function mkList {
    ((GLOBAL_AST_NUMBER++))
    local node_name="_NODE_${GLOBAL_AST_NUMBER}"
    declare -ga $node_name
-   declare -g AST_NODE="$node_name"
+   declare -g  AST_NODE="$node_name"
 
-   # DEBUG, print output.
-   #declare -p ${node_name}
+   # An array declared with only `declare -a arr`, but no value, will not be
+   # printed by `declare -p ${!arr*}`. Requires to be set to at least an empty
+   # array.
+   declare -n  node=$node_name
+   node=()
 }
 
 
@@ -173,10 +208,10 @@ function mkDictionary {
    ((GLOBAL_AST_NUMBER++))
    local node_name="_NODE_${GLOBAL_AST_NUMBER}"
    declare -gA $node_name
-   declare -g AST_NODE="$node_name"
+   declare -g  AST_NODE="$node_name"
 
-   # DEBUG, print output.
-   #declare -p ${node_name}
+   declare -n  node=$node_name
+   node=()
 }
 
 
@@ -184,7 +219,7 @@ function mkDictionary {
 function parse {
    check_lex_errors
 
-   grammar_data
+   grammar_root
    _DATA[ROOT]=$AST_NODE
 
    munch 'EOF'
@@ -206,48 +241,62 @@ function munch {
 }
 
 #──────────────────────────────────( grammar )──────────────────────────────────
-function grammar_data {
-   munch 'STRING,L_BRACE,L_BRACKET'
+function grammar_root {
+   # Root of the dataset may only be a list or a dict. No sense in using a JSON-
+   # esque database if you're only holding a single string.
+   munch 'L_BRACE,L_BRACKET'
 
    case ${TOKEN[type]} in
-      'STRING')      grammar_string ;;
-      'L_BRACE')     grammar_dict   ;;
-      'L_BRACKET')   grammar_list   ;;
-      *) raise_parse_error ;;
+      'L_BRACE')   grammar_dict   ;;
+      'L_BRACKET') grammar_list   ;;
+   esac
+}
+
+
+function grammar_data {
+   munch 'INTEGER,STRING,L_BRACE,L_BRACKET'
+
+   case ${TOKEN[type]} in
+      'STRING')    grammar_string ;;
+      'INTEGER')   grammar_int ;;
+      'L_BRACE')   grammar_dict   ;;
+      'L_BRACKET') grammar_list   ;;
    esac
 }
 
 
 function grammar_string {
    mkString
-   declare -- node_name=$AST_NODE
-   declare -n s=$node_name
+   declare -n node=$AST_NODE
+   node=${TOKEN[data]}
+}
 
-   s="${TOKEN[data]}"
 
-   # Reset global AST pointer to this String node.
-   AST_NODE=$node_name
+function grammar_int {
+   mkInteger
+   declare -n node=$AST_NODE
+   node=${TOKEN[data]}
 }
 
 
 function grammar_list {
    mkList
    declare -- node_name=$AST_NODE
-   declare -n l=$node_name
+   declare -n node=$node_name
 
-   grammar_data
-   l+=( $AST_NODE )
-
-   while [[ ${tPEEK1[type]} == 'COMMA' ]] ; do
-      munch 'COMMA'
-      [[ ${tPEEK1[type]} == 'R_BRACKET' ]] && break
+   until [[ ${tPEEK1[type]} == 'R_BRACKET' ]] ; do
       grammar_data
-      l+=( $AST_NODE )
+      node+=( $AST_NODE )
+
+      # This should serve the same function as the previous approach, however
+      # it also allows for the user to pass an empty list. Previous iteration
+      # required some initial data in lists and dicts.
+      if [[ ${tPEEK1[type]} == 'COMMA' ]] ; then
+         munch 'COMMA'
+      fi
    done
 
    munch 'R_BRACKET'
-
-   # Reset global AST pointer to this List node.
    AST_NODE=$node_name
 }
 
@@ -255,31 +304,33 @@ function grammar_list {
 function grammar_dict {
    mkDictionary
    declare -- node_name=$AST_NODE
-   declare -n d=$node_name
+   declare -n node=$node_name
 
-   # Initial assignment.
-   munch 'STRING' ; local key=${TOKEN[data]}
-   munch 'COLON'
-   grammar_data   ; d[$key]="$AST_NODE"
-
-   while [[ ${tPEEK1[type]} == 'COMMA' ]] ; do
-      munch 'COMMA'
-      [[ ${tPEEK1[type]} == 'R_BRACE' ]] && break
-      # Subsequent assignments.
+   until [[ ${tPEEK1[type]} == 'R_BRACE' ]] ; do
+      # TODO: currently requires string keys. Is this a holdover from JSON that
+      # we want to keep? Is there a good argument to be made for having non-
+      # string keys?
       munch 'STRING'
       local key=${TOKEN[data]}
 
-      if [[ -n "${d[$key]}" ]] ; then
+      if [[ -n "${node[$key]}" ]] ; then
          raise_duplicate_key_error "$key"
       fi
 
+      if ! validate_key "$key" ; then
+         raise_invalid_key_error "$key"
+      fi
+
       munch 'COLON'
-      grammar_data ; d[$key]="$AST_NODE"
+      grammar_data
+      node[$key]=$AST_NODE
+
+      if [[ ${tPEEK1[type]} == 'COMMA' ]] ; then
+         munch 'COMMA'
+      fi
    done
 
    munch 'R_BRACE'
-
-   # Reset global AST pointer to this Dict node.
    AST_NODE=$node_name
 }
 

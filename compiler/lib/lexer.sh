@@ -27,10 +27,11 @@ declare -- CURRENT PEEK BUFFER
 
 declare -A colormap=(
    [DOT]="$yl"
+   [FLOAT]="$bl"
    [COLON]="$wh"
    [COMMA]="$wh"
    [STRING]="$rd"
-   [NUMBER]="$bl"
+   [INTEGER]="$bl"
    [COMMENT]="$cy"
    [L_BRACE]="$wh"
    [R_BRACE]="$wh"
@@ -271,5 +272,10 @@ function number {
    done
 
    # Create token.
-   Token 'NUMBER'
+
+   if $decimal ; then
+      Token 'FLOAT'
+   else
+      Token 'INTEGER'
+   fi
 }
