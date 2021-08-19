@@ -6,10 +6,6 @@
 # here. There's great error logging in the data compilation phase, why not also
 # in the query compilation and parsing?
 #
-# 2) I don't like how much is kicked off by the `intr_call_method` method.
-# Things should be a bit more segmented. Currently it's very difficult to pull
-# apart bits from down the chain.
-#
 # 3) When deleting the _DATA[ROOT] node, we lose the [ROOT] propr on _DATA.
 # Unable to query or insert back onto it. Special case to re-establisht the
 # key?
@@ -33,6 +29,9 @@ declare -- METHOD          # Current transaction's method
 # Input data nodes
 declare -a DATA_PATH       # Stack of visited parent nodes. LIFO.
 declare -- DATA_NODE       # Pointer to node selected by user's query
+
+# Current level of indentation
+declare -i INDNT_LVL=0
 
 #────────────────────────────────( exceptions )─────────────────────────────────
 function raise_key_error {
@@ -73,7 +72,7 @@ function raise_insert_string_error {
 
 function raise_insert_list_index_error {
    echo -n  "Index Error: "
-   echo -e  "Index ${byl}[${1}]${rst} out of bounds."
+   echo -ne "Index ${byl}[${1}]${rst} out of bounds."
    echo -e  "Perhaps you meant ${yl}append()${rst} or ${yl}prepend()${rst}?"
    exit -12
 }
@@ -174,6 +173,7 @@ function intr_len {
    case $data_node_type in
       'string')       echo ${#node}    ;;
       'list'|'dict')  echo ${#node[@]} ;;
+      *) raise_type_error "len()" "$data_node_type"
    esac
 }
 
@@ -339,6 +339,7 @@ function get_type {
       '--')    echo 'string' ;;
       '-a')    echo 'list'   ;;
       '-A')    echo 'dict'   ;;
+      '-i')    echo 'int'    ;;
    esac
 }
 
@@ -348,7 +349,7 @@ function intr_delete_by_type {
    local node_type=$( get_type $node_name )
 
    case $node_type in
-      'string')         intr_delete_string  $node_name ;;
+      'string'|'int')   intr_delete_string  $node_name ;;
       'list'|'dict')    intr_delete_array   $node_name ;;
    esac
 }
@@ -400,9 +401,9 @@ function print_data_by_type {
    local node_type=$( get_type "$node_name" )
 
    case $node_type in
-      'string')   print_string "$node_name" ;;
-      'list')     print_list   "$node_name" ;;
-      'dict')     print_dict   "$node_name" ;;
+      'string'|'int')  print_string "$node_name" ;;
+      'list')          print_list   "$node_name" ;;
+      'dict')          print_dict   "$node_name" ;;
    esac
 }
 
@@ -470,9 +471,9 @@ function regular_print_data_by_type {
    local node_type=$( get_type "$node_name" )
 
    case $node_type in
-      'string')   regular_print_string "$node_name" ;;
-      'list')     regular_print_list   "$node_name" ;;
-      'dict')     regular_print_dict   "$node_name" ;;
+      'string'|'int')  regular_print_string "$node_name" ;;
+      'list')          regular_print_list   "$node_name" ;;
+      'dict')          regular_print_dict   "$node_name" ;;
    esac
 }
 
@@ -540,8 +541,8 @@ function intr_insert_by_type {
    local node_type=$( get_type $node_name )
 
    case $node_type in
-      'string') intr_insert_string $node_name ;;
-      'list'|'dict') intr_insert_array  $node_name ;;
+      'string'|'int') intr_insert_string $node_name ;;
+      'list'|'dict')  intr_insert_array  $node_name ;;
    esac
 }
 
