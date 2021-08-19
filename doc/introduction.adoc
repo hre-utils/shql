@@ -108,7 +108,7 @@ declare -n foo=var
 echo $foo  # -> 'this is a string'
 ----
 
-Namerefs are the absolute core of bash sneekiness and tomfoolery.
+Namerefs are the absolute core of bash sneakiness and tomfoolery.
 Passing two dicts to a function?
 Easy.
 

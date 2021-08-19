@@ -22,6 +22,9 @@ This is unacceptable.
 === Installation
 Clone the repo.
 
+=== Introduction
+See the link:doc/introduction.adoc[introduction] page.
+
 === Operations
 The structure of all '`requests`' to `shql` are as follows:
 ----
@@ -93,25 +96,26 @@ String file path relative to the current directory.
 
 ==== insert()
 ===== Description
-Inserts new JSON into a specified dict key, or at the end of a list.
+Inserts new JSON into a specified dict key, or into a list index.
+If inserting into a list, values are shifted from the index up to make room.
 
 ===== Arguments
-If inserting into list, only requires valid JSON input.
+Takes an index, followed by valid JSON input.
 
-If inserting into a dict, an IDENTIFIER is provided as the key, followed by the input JSON.
-There can be no existing data specified at `$key`, or a `KEY_ERROR` is raised.
+When inserting into a list, the index must be an integer.
+For a dict insertion, the index must be a string.
 
 ===== Example
 .List insert
 [source]
 ----
-/.baz > insert('five'); /.baz > insert(['a', 'new', 'list'])
+/.baz > insert(0, 'five'); /.baz > insert(1, ['a', 'new', 'list'])
 ----
 
 .Dict insert
 [source]
 ----
-/.foo > insert(new, 'VALUE')
+/.foo > insert('new', 'VALUE')
 ----
 
 ==== update()
@@ -174,7 +178,11 @@ Unlike many utilities, this project strives to collect as many errors as possibl
 === Writing a Parser, Again
 
 == TODO
-* [ ] Allow INTEGERs as a valid data type
-* [ ] All around code cleanup
-   ** [ ] Consistency in variable & function names
-   ** [ ] Add comments where missing
+* [ ] Add comments where missing
+* [ ] Support ordered dicts
+* [ ] All `get_type` case statements must have a default `raise_type_error`
+
+=== Done
+* [x] Allow INTEGERs as a valid data type
+* [x] All around code cleanup
+* [x] Consistency in variable & function names
