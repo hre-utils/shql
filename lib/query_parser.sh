@@ -1,31 +1,32 @@
 #!/bin/bash
 
 #══════════════════════════════════╡ GLOBAL ╞═══════════════════════════════════
-declare -- PROGDIR=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd )
-declare -- INFILE="$1"
-if [[ ! -e "$INFILE" ]] ; then
-   echo "Input file required."
-   exit -4
+declare -- QUERY_DATA="$1"
+declare -- CACHEFILE="$2"
+
+# Validation: require *some* data is passed in.
+if [[ ! -z $QUERY_DATA ]] ; then
+   echo "Argument Error: [\$1] Requires input JSON payload."
+fi
+
+# Validation: require cache file specified
+if [[ ! -z $CACHEFILE ]] ; then
+   echo "Argument Error: [\$2] Requires specifying CACHEFILE."
+fi
+
+# Validation: require cache file *exists*
+if [[ ! -e "$CACHEFILE" ]] ; then
+   echo "File Error: File '$CACHEFILE' does not exist."
+else
+   source "$CACHEFILE"
 fi
 
 # Source dependencies.
+declare -- PROGDIR=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd )
 source "${PROGDIR}/config.sh"
 source "${PROGDIR}/interpreter.sh"
 source "${PROGDIR}/share/lex_functions.sh"
 source "${PROGDIR}/share/parse_functions.sh"
-
-declare -- FILE_HASH=$( md5sum "$INFILE" )
-declare -- FILE_HASH=${FILE_HASH%% *}
-
-# Location of dumped output from the data compilation.
-declare -- PARSEFILE="${PROGDIR}/../.cache/${FILE_HASH}"
-
-if [[ ! -e "$PARSEFILE" ]] ; then
-   echo "Input file has not been parsed."
-   exit -5
-fi
-
-source "$PARSEFILE"
 
 #──────────────────────────────────( lexing )───────────────────────────────────
 declare -a TOKENS=()

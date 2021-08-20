@@ -2,10 +2,12 @@
 # Compilation & parsing of input .json data
 
 #══════════════════════════════════╡ GLOBAL ╞═══════════════════════════════════
-declare -- INFILE="$1"
-if [[ ! -e "$INFILE" ]] ; then
-   echo "Missing input file"
-   exit 1
+declare -- JSON_DATA="$1"
+declare -- CACHEFILE="${2:-/dev/stdout}"
+
+# Validation: require *some* data is passed in.
+if [[ ! -z $JSON_DATA ]] ; then
+   echo "Argument Error: [\$1] Requires input JSON payload."
 fi
 
 # Source dependencies.
@@ -16,12 +18,6 @@ source "${PROGDIR}/share/parse_functions.sh"
 
 # For printing better error output.
 declare -a FILE_BY_LINES
-
-# Hash for caching.
-declare -- RUN_HASH=$( md5sum "$INFILE" )
-declare -- RUN_HASH=${RUN_HASH%% *}
-declare -- HASHFILE="${PROGDIR}/../.cache/${RUN_HASH}"
-mkdir -p "$(dirname "${HASHFILE}")"
 
 #──────────────────────────────────( lexing )───────────────────────────────────
 declare -a TOKENS=()
@@ -174,12 +170,14 @@ function dump_nodes {
 
 
 function cache_ast {
-   dump_nodes > "$HASHFILE"
+   dump_nodes > "$CACHEFILE"
 }
 
 #════════════════════════════════════╡ GO ╞═════════════════════════════════════
 # Cached?
-[[ -e "$HASHFILE" ]] && exit 0
+if [[ "$CACHEFILE" != /dev/stdout && -e "$CACHEFILE" ]] ; then
+   exit 0
+fi
 
 # Compile.
 lex

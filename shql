@@ -1,25 +1,47 @@
 #!/bin/bash
 # baSH Query Language
+#
+# The `shql` script is essentially an ease-of-use wrapper around data_parser.sh
+# and query_parser.sh. It sets the appropriate conditions for both to be run,
+# and ensures the requisite data is passed between them.
+#
+# There are design decisions that I made which may be easily modified for a
+# different use case. For example, JSON data must be passed in through a file
+# path, or stdin. Queries may only be passed through a file path, or as a param
+# on the command line.
 
+#──────────────────────────────────( global )───────────────────────────────────
 # String buffers to hold the raw text of our input JSON, and the query string.
 declare -- JSON_DATA
 declare -- QUERY_DATA
 
-
-function usage {
+#─────────────────────────────────( functions )─────────────────────────────────
+function quick_usage {
 cat<<EOF 1>&2
-USAGE: ${BASH_SOURCE[0]##*/} [-h] [-q QUERY | -f QUERY_FILE] <file>
+usage:
+   ${BASH_SOURCE[0]##*/} -q query_string [<file>]
+   ${BASH_SOURCE[0]##*/} -f query_file [<file>]
 
 baSH Query Language (shql): compiles JSON input into native bash, which can then
 be queried, supporing the basic CRUD operations, and then some.
 
 Options:
-   -h|--help               Print this message and exit
-   -q|--query QUERY        Performs QUERY on input JSON
-   -f|--query-file FILE    Performs queries from FILE on input JSON
+   -h, --help        Print this message and exit
+   -q, --query       Performs QUERY on input JSON
+   -f, --query-file  Performs queries from a file on input JSON
+EOF
+
+[[ $1 -gt 0 ]] && exit $1
+}
+
+
+function usage {
+quick_usage 0
+
+cat<<EOF 1>&2
 
 Query Semantics:
-   1. A full query is structured as \`LOCATION '>' METHOD\`>
+   1. A full query is structured as \`LOCATION '>' METHOD\`.
       a. Multiple queries may be placed on the same line, separated with ';'.
    2. All locations must begin with '/' to indicate the 'root' of the data.
    3. Lists may be indexed with square bracket notation:  "/[0]".
@@ -53,6 +75,16 @@ Methods:
 
    - update(DATA)
       Recursively deletes from the LOCATION, then inserts JSON DATA in its place
+
+Examples:
+   Read data from a configuration file, update a value, then print to validate:
+   $ shql -q '/.foo > update('bar'); / > print()' config.json
+
+   Insert data into the 3rd index of an existing list:
+   $ shql -q '/.bar > insert(3, "new list item")' config.json
+
+   Read JSON from stdin, pretty print it back out:
+   $ echo '{"this": "that"}' | shql -q '/ > print()'
 EOF
 
 exit $1
@@ -60,59 +92,59 @@ exit $1
 
 #─────────────────────────────────( argparse )──────────────────────────────────
 while [[ $# -gt 0 ]] ; do
-   echo "$1"
-
    case $1 in
          -h|--help)
             usage 0
             ;;
 
          -q|--query)
-            __query__="$1"
-            shift ;;
+            shift ; __query__="$1" ; shift
+            ;;
 
          -f|--query-file)
-            __query_file__="$1"
-            shift ;;
+            shift ; __query_file__="$1" ; shift
+            ;;
 
-         -o|--options)
-            __options__="$1"
-            shift ;;
+         #-o|--options)
+         #   shift ; __options__="$1" ;shift
+         #   ;;
 
          --)
-            shift ;
-            break ;;
+            shift
+            break
+            ;;
 
          -*)
-            __invalid_opt__+=( $1 )
-            shift ;;
+            __invalid_opt__+=( $1 ) ; shift
+            ;;
 
-         *) __positional__+=( $1 )
-            shift ;;
+         *) __positional__+=( $1 ) ; shift
+            ;;
    esac
 done
+
+# If user passed '--' for file paths that may begin with a dash.
+__positional__+=( "$@" )
 
 #────────────────────────────────( validation )─────────────────────────────────
 declare -a argument_errors
 
-if [[ ${#__positional__[@]} -eq 0 ]] ; then
+# Requires either no position arg (read from stdin), or a file name.
+if [[ ${#__positional__[@]} -gt 1 ]] ; then
+   args=''
+   for arg in "${__positional__[@]}" ; do
+      args+="${args:+, }${arg}"
+   done
+
    argument_errors+=(
-      'Argument Error: Received 0 positional args. Expected 1.'
-   )
-elif [[ ${#__positional__[@]} -gt 1 ]] ; then
-   argument_errors+=(
-      'Argument Error: Too many positional args. Expected 1.'
+      "Argument Error: Too many positional args[${args}]. Expected <= 1."
    )
 fi
 
-# Query: must have -p XOR -q
+# Query: May not have both a query file & query string.
 if [[ -n ${__query_file__} && -n ${__query__} ]] ; then
    argument_errors+=(
-      'Argument Error: Requires -q XOR -q.'
-   )
-elif[[ -z ${__query_file__} && -z ${__query__} ]]
-   argument_errors+=(
-      'Argument Error: Requires -q XOR -q.'
+      'Argument Error: Requires -q OR -f, not both.'
    )
 fi
 
@@ -120,15 +152,21 @@ fi
 if [[ ${#argument_errors[@]} -gt 0 ]] ; then
    for err in "${argument_errors[@]}" ; do
       echo "$err" 1>&2
-   done
-   usage 1
+   done ; echo
+   quick_usage 1
 fi
 
 #─────────────────────────────────( load data )─────────────────────────────────
 case "${__positional__[0]}" in
-   -) JSON_DATA=/dev/stdin ;;
-   *) JSON_DATA="${__positional__[0]}"
+   '') JSON_DATA=/dev/stdin ;;                 # If no FILE arg read from stdin
+   *)  JSON_DATA="${__positional__[0]}"        # Else read from specified file.
 esac
+
+# Input file must exist.
+if [[ ! -e "$JSON_DATA" ]] ; then
+   echo "File Error: File '$JSON_DATA' does not exist."
+   exit -1
+fi
 
 if [[ -n ${__query__} ]] ; then
    QUERY_DATA="${__query__}"
@@ -137,16 +175,12 @@ elif [[ -n ${__query_file__} ]] ; then
 fi
 
 #────────────────────────────────────( go )─────────────────────────────────────
-PROGDIR=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd )
-bash "$PROGDIR"/lib/data_parser.sh "$JSON_DATA" || exit $?
-bash "$PROGDIR"/lib/query_parser.sh "$QUERY_DATA"
+declare -- PROGDIR=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd )
+declare -- CACHE_PREFIX="${XDG_CACHE_HOME:-$HOME/.cache}/hre-utils/shql"
+mkdir -p "${CACHE_PREFIX}/data"
 
+declare -- HASH=$( md5sum <<< "$JSON_DATA" | awk '{print $1}' )
+declare -- CACHEFILE="${CACHE_PREFIX}/data/$HASH"
 
-# The intent of this should be non-interactive. We want the user to be able to
-# run this as part of another utility. This should be a library function, not
-# a principal command the user is running on the commandline. Any methods that
-# suggest otherwise (pretty printing), are merely for debugging and convenience.
-#
-# Invocation:
-#  $ shql -q '/.foo' file.json
-#  $ echo '{"this": "that"}' | shql -q '/.foo' -
+bash "$PROGDIR"/lib/data_parser.sh "$JSON_DATA" "$CACHEFILE" || exit $?
+bash "$PROGDIR"/lib/query_parser.sh "$QUERY_DATA" "$CACHEFILE"
