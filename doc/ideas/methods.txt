@@ -1,0 +1,13 @@
+curently we're kinda just interpreting directly off our AST, not really a
+problem as the structure is quite simple.
+
+would be good to further compile our method calls and arguments.
+
+anything between '(' ... ')' is appended to the argument list (there will not
+be keyword arguments).
+
+each method will have a corresponding function, and validation that the number
+and type of arguments matches what is expected.
+
+I do not know how this is done correctly when designing a programming language,
+I haven't gotten there yet in the book. :/

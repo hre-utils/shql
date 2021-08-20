@@ -1,6 +1,152 @@
 #!/bin/bash
 # baSH Query Language
 
+# String buffers to hold the raw text of our input JSON, and the query string.
+declare -- JSON_DATA
+declare -- QUERY_DATA
+
+
+function usage {
+cat<<EOF 1>&2
+USAGE: ${BASH_SOURCE[0]##*/} [-h] [-q QUERY | -f QUERY_FILE] <file>
+
+baSH Query Language (shql): compiles JSON input into native bash, which can then
+be queried, supporing the basic CRUD operations, and then some.
+
+Options:
+   -h|--help               Print this message and exit
+   -q|--query QUERY        Performs QUERY on input JSON
+   -f|--query-file FILE    Performs queries from FILE on input JSON
+
+Query Semantics:
+   1. A full query is structured as \`LOCATION '>' METHOD\`>
+      a. Multiple queries may be placed on the same line, separated with ';'.
+   2. All locations must begin with '/' to indicate the 'root' of the data.
+   3. Lists may be indexed with square bracket notation:  "/[0]".
+   4. Dicts may be indexed with dot notation:  "/.foo".
+
+Methods:
+   Methods act upon the selected location, and are non-recursive unless stated
+   otherwise.
+
+   - len()
+      Prints the string length, list lenth, or # keys
+
+   - write('filepath.json')
+      Recursively writes data
+
+   - print()
+      Recursively prints data
+
+   - delete()
+      Recursively deletes data
+
+   - append(DATA)
+      Adds JSON DATA to the end of a list
+
+   - prepend(DATA)
+      Adds JSON DATA to the start of a list
+
+   - insert(INDEX, DATA)
+      Inserts JSON DATA into a list or dict at the specified INDEX. If insert
+      into a list, shifts upwards prior to inserting.
+
+   - update(DATA)
+      Recursively deletes from the LOCATION, then inserts JSON DATA in its place
+EOF
+
+exit $1
+}
+
+#─────────────────────────────────( argparse )──────────────────────────────────
+while [[ $# -gt 0 ]] ; do
+   echo "$1"
+
+   case $1 in
+         -h|--help)
+            usage 0
+            ;;
+
+         -q|--query)
+            __query__="$1"
+            shift ;;
+
+         -f|--query-file)
+            __query_file__="$1"
+            shift ;;
+
+         -o|--options)
+            __options__="$1"
+            shift ;;
+
+         --)
+            shift ;
+            break ;;
+
+         -*)
+            __invalid_opt__+=( $1 )
+            shift ;;
+
+         *) __positional__+=( $1 )
+            shift ;;
+   esac
+done
+
+#────────────────────────────────( validation )─────────────────────────────────
+declare -a argument_errors
+
+if [[ ${#__positional__[@]} -eq 0 ]] ; then
+   argument_errors+=(
+      'Argument Error: Received 0 positional args. Expected 1.'
+   )
+elif [[ ${#__positional__[@]} -gt 1 ]] ; then
+   argument_errors+=(
+      'Argument Error: Too many positional args. Expected 1.'
+   )
+fi
+
+# Query: must have -p XOR -q
+if [[ -n ${__query_file__} && -n ${__query__} ]] ; then
+   argument_errors+=(
+      'Argument Error: Requires -q XOR -q.'
+   )
+elif[[ -z ${__query_file__} && -z ${__query__} ]]
+   argument_errors+=(
+      'Argument Error: Requires -q XOR -q.'
+   )
+fi
+
+# Print errors.
+if [[ ${#argument_errors[@]} -gt 0 ]] ; then
+   for err in "${argument_errors[@]}" ; do
+      echo "$err" 1>&2
+   done
+   usage 1
+fi
+
+#─────────────────────────────────( load data )─────────────────────────────────
+case "${__positional__[0]}" in
+   -) JSON_DATA=/dev/stdin ;;
+   *) JSON_DATA="${__positional__[0]}"
+esac
+
+if [[ -n ${__query__} ]] ; then
+   QUERY_DATA="${__query__}"
+elif [[ -n ${__query_file__} ]] ; then
+   QUERY_DATA=$( cat "${__query_file___}" )
+fi
+
+#────────────────────────────────────( go )─────────────────────────────────────
 PROGDIR=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd )
-bash "$PROGDIR"/lib/data_parser.sh "$1" || exit $?
-bash "$PROGDIR"/lib/query_parser.sh "$1"
+bash "$PROGDIR"/lib/data_parser.sh "$JSON_DATA" || exit $?
+bash "$PROGDIR"/lib/query_parser.sh "$QUERY_DATA"
+
+
+# The intent of this should be non-interactive. We want the user to be able to
+# run this as part of another utility. This should be a library function, not
+# a principal command the user is running on the commandline. Any methods that
+# suggest otherwise (pretty printing), are merely for debugging and convenience.
+#
+# Invocation:
+#  $ shql -q '/.foo' file.json
+#  $ echo '{"this": "that"}' | shql -q '/.foo' -
