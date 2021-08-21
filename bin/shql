@@ -182,6 +182,42 @@ fi
 declare -- CACHE_PREFIX="${XDG_CACHE_HOME:-$HOME/.cache}/hre-utils/shql"
 mkdir -p "${CACHE_PREFIX}/data"
 
+# TODO;XXX:
+# We have a bit of a Catch 22 here. I need the hash to invoke the data parser.
+# But I can't get the hash until the data parser actually finishes reading all
+# the data.
+# I still want `data_parser` and `query_parser` to function as standalone
+# utilities, thus I do not want to make any changes to solve specifically this
+# problem. For example, using named pipes, or a textfile, or exported variables
+# that identify the hash of this input data set.
+#
+# Ideas:
+#  1) Temp file. Write a temp file under ${CACHE_PREFIX}/hash. Written in
+#     data_parser.sh after all data has been read by the lexer.
+#  2) Named pipe. Similar philosophy, though we'd be able to handle the creation
+#     and cleanup solely within this script. The data_parser only needs to cat
+#     the hash to the file.
+#  3) Move file. Start by placing the file into a staging/ directory. It has
+#     no unique name. The parser will `mv` the file in-place, setting its name?
+#     Nope. Don't like.
+#  4) Environment variables. This is honestly seeming like the best way so far.
+#     Exporting a variable is a pretty straightforward operation.
+#
+# As I think about it more, I think this is just a poor approach. We shouldn't
+# be requiring the data_parser to output to a specific file that we're passing
+# in as an argument. Defeats the purpose of a dynamically generated hash of the
+# input data.
+#
+# It should only take the file path as an argument, then it begins to parse.
+# Once all the data has been read, it can md5sum the string, check it against
+# existing hashes. If it doesn't exist, store the $HASH, wait until a successful
+# completion of the parse, then write the cache.
+#
+# With the above approach we'll still need to notify the user of the most
+# recent hash. Text file does feel like the best way to do this. Though we'll
+# either need to set to an empty string, or delete, at the beginning of each
+# new run.
+#
 declare -- HASH=$( md5sum <<< "$JSON_DATA" | awk '{print $1}' )
 declare -- CACHEFILE="${CACHE_PREFIX}/data/$HASH"
 
