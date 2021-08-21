@@ -21,8 +21,8 @@ declare -- CURRENT PEEK BUFFER
 #────────────────────────────────( exceptions )─────────────────────────────────
 function raise_parse_error {
    local loc="[${TOKEN[lineno]}:${TOKEN[colno]}]"
-   echo -n "Parse Error: ${loc} "
-   echo -e "Expected ${byl}${@}${rst}, received ${byl}${TOKEN[type]}${rst}."
+   echo -n "Parse Error: ${loc} " 1>&2
+   echo -e "Expected ${byl}${@}${rst}, received ${byl}${TOKEN[type]}${rst}." 1>&2
 
    exit -2
 }
@@ -30,8 +30,8 @@ function raise_parse_error {
 
 function raise_duplicate_key_error {
    local loc="[${TOKEN[lineno]}:${TOKEN[colno]}]"
-   echo -n "Warning: ${loc} "
-   echo -e "Key ${byl}${1@Q}${rst} already used (overwriting previous)"
+   echo -n "Warning: ${loc} " 1>&2
+   echo -e "Key ${byl}${1@Q}${rst} already used (overwriting previous)" 1>&2
    # Not an exitable error, per se. Currently this is just a 'warning' for the
    # user to be aware of.
 }
@@ -39,8 +39,8 @@ function raise_duplicate_key_error {
 
 function raise_invalid_key_error {
    local loc="[${TOKEN[lineno]}:${TOKEN[colno]}]"
-   echo -n "Key Error: ${loc} "
-   echo -e "Key ${byl}${1@Q}${rst} format invalid. Must be a bash 'word'."
+   echo -n "Key Error: ${loc} " 1>&2
+   echo -e "Key ${byl}${1@Q}${rst} format invalid. Must be a bash 'word'." 1>&2
 
    exit -3
 }

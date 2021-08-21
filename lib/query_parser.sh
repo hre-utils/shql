@@ -6,27 +6,27 @@ declare -- CACHEFILE="$2"
 
 # Validation: require *some* data is passed in.
 if [[ -z $QUERY_DATA ]] ; then
-   echo "Argument Error: [\$1] Requires input JSON payload."
+   echo "Argument Error: [\$1] Requires query." 1>&2
 fi
 
 # Validation: require cache file specified
 if [[ -z $CACHEFILE ]] ; then
-   echo "Argument Error: [\$2] Requires specifying CACHEFILE."
+   echo "Argument Error: [\$2] Requires cache file." 1>&2
 fi
 
 # Validation: require cache file *exists*
 if [[ ! -e "$CACHEFILE" ]] ; then
-   echo "File Error: File '$CACHEFILE' does not exist."
+   echo "File Error: File '$CACHEFILE' does not exist." 1>&2
 else
    source "$CACHEFILE"
 fi
 
 # Source dependencies.
-declare -- PROGDIR=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd )
-source "${PROGDIR}/config.sh"
-source "${PROGDIR}/interpreter.sh"
-source "${PROGDIR}/share/lex_functions.sh"
-source "${PROGDIR}/share/parse_functions.sh"
+declare -- PARENT_DIR=$(cd "$(dirname "$(dirname "${BASH_SOURCE[0]}")")" ; pwd)
+source "${PARENT_DIR}/lib/interpreter.sh"
+source "${PARENT_DIR}/lib/lex_functions.sh"
+source "${PARENT_DIR}/lib/parse_functions.sh"
+source "${PARENT_DIR}/share/config.sh"
 
 # For printing better error output.
 declare -a FILE_BY_LINES

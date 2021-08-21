@@ -19,7 +19,7 @@ function Token {
    data="${2:-$BUFFER}"
 
    if [[ -z "$ttype" ]] ; then
-      echo "Missing \$ttype" ; exit 2
+      echo "Missing \$ttype" 1>&2 ; exit 2
    fi
 
    # Generate unique token name, add to global list.

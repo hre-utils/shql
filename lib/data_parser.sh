@@ -6,10 +6,10 @@ declare -- JSON_FILE="${1:-/dev/stdin}"
 declare -- CACHEFILE="${2:-/dev/stdout}"
 
 # Source dependencies.
-declare -- PROGDIR=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd )
-source "${PROGDIR}/config.sh"
-source "${PROGDIR}/share/lex_functions.sh"
-source "${PROGDIR}/share/parse_functions.sh"
+declare -- PARENT_DIR=$(cd "$(dirname "$(dirname "${BASH_SOURCE[0]}")")" ; pwd)
+source "${PARENT_DIR}/lib/lex_functions.sh"
+source "${PARENT_DIR}/lib/parse_functions.sh"
+source "${PARENT_DIR}/share/config.sh"
 
 # For printing better error output.
 declare -a FILE_BY_LINES

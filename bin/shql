@@ -156,7 +156,7 @@ fi
 if [[ ${#argument_errors[@]} -gt 0 ]] ; then
    for err in "${argument_errors[@]}" ; do
       echo "$err" 1>&2
-   done ; echo
+   done
    quick_usage 1
 fi
 
@@ -168,7 +168,7 @@ esac
 
 # Input file must exist.
 if [[ ! -e "$JSON_DATA" ]] ; then
-   echo "File Error: File '$JSON_DATA' does not exist."
+   echo "File Error: File '$JSON_DATA' does not exist." 1>&2
    exit -1
 fi
 
@@ -179,12 +179,12 @@ elif [[ -n ${__query_file__} ]] ; then
 fi
 
 #────────────────────────────────────( go )─────────────────────────────────────
-declare -- PROGDIR=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd )
 declare -- CACHE_PREFIX="${XDG_CACHE_HOME:-$HOME/.cache}/hre-utils/shql"
 mkdir -p "${CACHE_PREFIX}/data"
 
 declare -- HASH=$( md5sum <<< "$JSON_DATA" | awk '{print $1}' )
 declare -- CACHEFILE="${CACHE_PREFIX}/data/$HASH"
 
-bash "$PROGDIR"/lib/data_parser.sh "$JSON_DATA" "$CACHEFILE"
-bash "$PROGDIR"/lib/query_parser.sh "$QUERY_DATA" "$CACHEFILE"
+declare -- PARENT_DIR=$( cd "$(dirname "$(dirname "${BASH_SOURCE[0]}")")" ; pwd )
+bash "$PARENT_DIR/lib/data_parser.sh" "$JSON_DATA" "$CACHEFILE"
+bash "$PARENT_DIR/lib/query_parser.sh" "$QUERY_DATA" "$CACHEFILE"

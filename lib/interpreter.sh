@@ -35,45 +35,45 @@ declare -i INDNT_LVL=0
 
 #────────────────────────────────( exceptions )─────────────────────────────────
 function raise_key_error {
-   echo -n "Key Error: "
-   echo -e "Key ${byl}${1@Q}${rst} not found."
+   echo -n "Key Error: " 1>&2
+   echo -e "Key ${byl}${1@Q}${rst} not found." 1>&2
    exit -7
 }
 
 
 function raise_index_error {
-   echo -n "Index Error: "
-   echo -e "Index ${byl}[${1}]${rst} out of bounds."
+   echo -n "Index Error: " 1>&2
+   echo -e "Index ${byl}[${1}]${rst} out of bounds." 1>&2
    exit -8
 }
 
 
 function raise_type_error {
-   echo -n "Type Error: "
-   echo -e "Operation ${yl}$1${rst} invalid on type(${yl}$2${rst})."
+   echo -n "Type Error: " 1>&2
+   echo -e "Operation ${yl}$1${rst} invalid on type(${yl}$2${rst})." 1>&2
    exit -9
 }
 
 
 function raise_insert_dict_error {
-   echo -n  "Key Error: "
-   echo -ne "Key ${byl}${1@Q}${rst} already exists. "
-   echo -e  "Perhaps you meant ${yl}update()${rst}?"
+   echo -n  "Key Error: " 1>&2
+   echo -ne "Key ${byl}${1@Q}${rst} already exists. " 1>&2
+   echo -e  "Perhaps you meant ${yl}update()${rst}?" 1>&2
    exit -10
 }
 
 
 function raise_insert_string_error {
-   echo -n  "Type Error: "
-   echo -ne "Unable to insert into a string. "
-   echo -e  "Perhaps you meant ${yl}update()${rst}?"
+   echo -n  "Type Error: " 1>&2
+   echo -ne "Unable to insert into a string. " 1>&2
+   echo -e  "Perhaps you meant ${yl}update()${rst}?" 1>&2
    exit -11
 }
 
 function raise_insert_list_index_error {
-   echo -n  "Index Error: "
-   echo -ne "Index ${byl}[${1}]${rst} out of bounds."
-   echo -e  "Perhaps you meant ${yl}append()${rst} or ${yl}prepend()${rst}?"
+   echo -n  "Index Error: " 1>&2
+   echo -ne "Index ${byl}[${1}]${rst} out of bounds." 1>&2
+   echo -e  "Perhaps you meant ${yl}append()${rst} or ${yl}prepend()${rst}?" 1>&2
    exit -12
 }
 

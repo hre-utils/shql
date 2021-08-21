@@ -10,6 +10,7 @@ JSON parsing & query language written entirely in Bash.
 
 == Installation
 Clone the repo.
+Run `sudo install.sh`.
 
 == Invocation
 [source]
