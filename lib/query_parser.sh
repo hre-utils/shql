@@ -5,12 +5,12 @@ declare -- QUERY_DATA="$1"
 declare -- CACHEFILE="$2"
 
 # Validation: require *some* data is passed in.
-if [[ ! -z $QUERY_DATA ]] ; then
+if [[ -z $QUERY_DATA ]] ; then
    echo "Argument Error: [\$1] Requires input JSON payload."
 fi
 
 # Validation: require cache file specified
-if [[ ! -z $CACHEFILE ]] ; then
+if [[ -z $CACHEFILE ]] ; then
    echo "Argument Error: [\$2] Requires specifying CACHEFILE."
 fi
 
@@ -27,6 +27,9 @@ source "${PROGDIR}/config.sh"
 source "${PROGDIR}/interpreter.sh"
 source "${PROGDIR}/share/lex_functions.sh"
 source "${PROGDIR}/share/parse_functions.sh"
+
+# For printing better error output.
+declare -a FILE_BY_LINES
 
 #──────────────────────────────────( lexing )───────────────────────────────────
 declare -a TOKENS=()
@@ -84,7 +87,11 @@ function lex {
    # Fill into array, allows us to seek forwards & backwards.
    while read -rN1 c ; do
       CHARRAY+=( "$c" )
-   done <<< "$INPUT_STRING"
+   done <<< "$QUERY_DATA"
+
+   # For better error output printing. Can display the full original line, along
+   # with a pointer to the offending error word/token.
+   mapfile -td $'\n' FILE_BY_LINES < "$CACHEFILE"
 
    # Iterate over array of characters. Lex into tokens.
    while [[ ${CURSOR[pos]} -lt ${#CHARRAY[@]} ]] ; do
@@ -204,15 +211,24 @@ function parse {
    munch 'EOF'
 }
 
-#════════════════════════════════════╡ GO ╞═════════════════════════════════════
-read -p 'query> ' INPUT_STRING
 
+function dump_nodes {
+   (
+      declare -p _META
+      declare -p _DATA
+      if [[ -n ${!_NODE_*} ]] ; then
+         declare -p ${!_NODE_*}
+      fi
+   ) | sort -V -k3 > "$CACHEFILE"
+}
+
+
+function cache_ast {
+   dump_nodes > "$CACHEFILE"
+}
+
+#════════════════════════════════════╡ GO ╞═════════════════════════════════════
 lex
 parse
 interpret
-
-## DEBUG
-#declare -p ${!_QUERY_NODE_*}
-#declare -p _META
-#declare -p _DATA
-#declare -p ${!_NODE_*}
+dump_nodes

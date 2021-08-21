@@ -2,13 +2,8 @@
 # Compilation & parsing of input .json data
 
 #══════════════════════════════════╡ GLOBAL ╞═══════════════════════════════════
-declare -- JSON_DATA="$1"
+declare -- JSON_FILE="${1:-/dev/stdin}"
 declare -- CACHEFILE="${2:-/dev/stdout}"
-
-# Validation: require *some* data is passed in.
-if [[ ! -z $JSON_DATA ]] ; then
-   echo "Argument Error: [\$1] Requires input JSON payload."
-fi
 
 # Source dependencies.
 declare -- PROGDIR=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd )
@@ -76,13 +71,13 @@ function lex {
    # Fill individual characters into array, allows more easy 'peek' operations.
    while read -rN1 c ; do
       CHARRAY+=( "$c" )
-   done < "$INFILE"
+   done < "$JSON_FILE"
 
    # Creating secondary line buffer to do better debug output printing. It would
    # be more efficient to *only* hold a buffer of lines up until each newline.
    # Unpon an error, we'd only need to save the singular line, then can resume
    # overwriting. This is in TODO already.
-   mapfile -td $'\n' FILE_BY_LINES < "$INFILE"
+   mapfile -td $'\n' FILE_BY_LINES < "$JSON_FILE"
 
    while [[ ${CURSOR[pos]} -lt ${#CHARRAY[@]} ]] ; do
       advance

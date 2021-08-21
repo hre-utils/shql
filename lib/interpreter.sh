@@ -98,19 +98,6 @@ function interpret {
       # Method.
       intr_call_method
    done
-
-   re_cache
-}
-
-
-function re_cache {
-   (
-      declare -p _META
-      declare -p _DATA
-      if [[ -n ${!_NODE_*} ]] ; then
-         declare -p ${!_NODE_*}
-      fi
-   ) | sort -V -k3 > "$PARSEFILE"
 }
 
 
@@ -179,15 +166,14 @@ function intr_len {
 
 
 function intr_write {
-   declare -n data_node=${METHOD[data]}
-   declare -- path=${data_node[data]}
+   declare -n node=${METHOD[data]}
+   declare -- path=${node[data]}
 
-   local dir=$( dirname "$path" )
-   mkdir -p "$dir"
+   mkdir -p "$( dirname "$path" )"
 
    # TODO: This is a pretty shit solution. Should temporarily disable the
    # existing color, rather than re-writing the functions without it.
-   regular_print_data_by_type $DATA_NODE > "${dir}/${path}"
+   regular_print_data_by_type $DATA_NODE > "${path}"
 }
 
 
@@ -267,16 +253,7 @@ function intr_update {
    declare -- data_node_type=$( get_type $DATA_NODE )
    declare -- insert_data_node=${METHOD[data]}
 
-   # TODO: Turns out this will be a bit more of a complex operation than I
-   # though before. Need to first recursively delete everything under the
-   # existing node we are updating. But we *can't* delete the key to it...
-   # Oh wait, yes we can. Turns out update is exactly the same as a full
-   # recursive delete, followed by an insert() with the original key.
-   # Interesting.
    intr_delete_by_type $DATA_NODE
-
-   # Then can drop the new parent node into the original location, using the
-   # original $QUERY.
    intr_insert_by_type $insert_data_node
 }
 

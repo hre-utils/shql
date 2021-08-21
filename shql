@@ -148,6 +148,13 @@ if [[ -n ${__query_file__} && -n ${__query__} ]] ; then
    )
 fi
 
+# Query file: must exist
+if [[ -n ${__query_file__} && ! -e ${__query_file__} ]] ; then
+   argument_errors+=(
+      "File Error: File '${__query_file__}' does not exist."
+   )
+fi
+
 # Print errors.
 if [[ ${#argument_errors[@]} -gt 0 ]] ; then
    for err in "${argument_errors[@]}" ; do
@@ -171,7 +178,7 @@ fi
 if [[ -n ${__query__} ]] ; then
    QUERY_DATA="${__query__}"
 elif [[ -n ${__query_file__} ]] ; then
-   QUERY_DATA=$( cat "${__query_file___}" )
+   QUERY_DATA=$( cat "${__query_file__}" )
 fi
 
 #────────────────────────────────────( go )─────────────────────────────────────
@@ -182,5 +189,5 @@ mkdir -p "${CACHE_PREFIX}/data"
 declare -- HASH=$( md5sum <<< "$JSON_DATA" | awk '{print $1}' )
 declare -- CACHEFILE="${CACHE_PREFIX}/data/$HASH"
 
-bash "$PROGDIR"/lib/data_parser.sh "$JSON_DATA" "$CACHEFILE" || exit $?
+bash "$PROGDIR"/lib/data_parser.sh "$JSON_DATA" "$CACHEFILE"
 bash "$PROGDIR"/lib/query_parser.sh "$QUERY_DATA" "$CACHEFILE"
