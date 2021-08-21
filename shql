@@ -22,9 +22,6 @@ usage:
    ${BASH_SOURCE[0]##*/} -q query_string [<file>]
    ${BASH_SOURCE[0]##*/} -f query_file [<file>]
 
-baSH Query Language (shql): compiles JSON input into native bash, which can then
-be queried, supporing the basic CRUD operations, and then some.
-
 Options:
    -h, --help        Print this message and exit
    -q, --query       Performs QUERY on input JSON
