@@ -1,10 +1,5 @@
 = baSH Query Language (shql)
 Marcus Aurelius <marcus [at] aurelius [dot] org>
-:source-highlighter:     pygments
-:pygments-style:         algol_nu
-:pygments-linenums-mode: table
-:toc:                    left
-:toclevels:              3
 
 JSON parsing & query language written entirely in Bash.
 
