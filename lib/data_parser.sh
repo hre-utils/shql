@@ -5,8 +5,24 @@
 declare -- JSON_FILE="${1:-/dev/stdin}"
 declare -- CACHEFILE="${2:-/dev/stdout}"
 
+# Need to entirely re-think through the concept of caching, as it relates to
+# this utility. Obviously we want to avoid re-compiling data, as it's an
+# expensive operation in bash. But is there a good way to do it such that it
+# does not dramatically alter how this script would work as a standalone script?
+#
+# Do you give an output cache file? Or should the script determine it itself?
+# How would the latter work. And if it does it that way, how does it communicate
+# back to the caller what file was created, or where. Similarly, if we want to
+# pass in a directory, and maybe create a file within that dir (only if the hash
+# does not yet exist), how do we inform the user which file was just created, if
+# any?
+
+function cache_ast {
+   dump_nodes > "$DATAFILE"
+}
+
 # Source dependencies.
-declare -- PARENT_DIR=$(cd "$(dirname "$(dirname "${BASH_SOURCE[0]}")")" ; pwd)
+declare -- PARENT_DIR=$(dirname "$(cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd)")
 source "${PARENT_DIR}/lib/lex_functions.sh"
 source "${PARENT_DIR}/lib/parse_functions.sh"
 source "${PARENT_DIR}/share/config.sh"
@@ -159,7 +175,9 @@ function dump_nodes {
       _META[max_node_ref]=$GLOBAL_AST_NUMBER
       declare -p _META
       declare -p _DATA
-      declare -p ${!_NODE_*}
+      if [[ -n ${!_NODE_*} ]] ; then
+         declare -p ${!_NODE_*}
+      fi
    ) | sort -V -k3
 }
 

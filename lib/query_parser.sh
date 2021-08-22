@@ -1,8 +1,9 @@
 #!/bin/bash
+# Compilation & parsing of query. Operates on previously compiled JSON input.
 
 #══════════════════════════════════╡ GLOBAL ╞═══════════════════════════════════
 declare -- QUERY_DATA="$1"
-declare -- CACHEFILE="$2"
+declare -- DATAFILE="$2"
 
 # Validation: require *some* data is passed in.
 if [[ -z $QUERY_DATA ]] ; then
@@ -10,19 +11,19 @@ if [[ -z $QUERY_DATA ]] ; then
 fi
 
 # Validation: require cache file specified
-if [[ -z $CACHEFILE ]] ; then
-   echo "Argument Error: [\$2] Requires cache file." 1>&2
+if [[ -z $DATAFILE ]] ; then
+   echo "Argument Error: [\$2] Requires data file." 1>&2
 fi
 
-# Validation: require cache file *exists*
-if [[ ! -e "$CACHEFILE" ]] ; then
-   echo "File Error: File '$CACHEFILE' does not exist." 1>&2
+# Validation: require data file *exists*
+if [[ ! -e "$DATAFILE" ]] ; then
+   echo "File Error: File '$DATAFILE' does not exist." 1>&2
 else
-   source "$CACHEFILE"
+   source "$DATAFILE"
 fi
 
 # Source dependencies.
-declare -- PARENT_DIR=$(cd "$(dirname "$(dirname "${BASH_SOURCE[0]}")")" ; pwd)
+declare -- PARENT_DIR=$(dirname "$(cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd)")
 source "${PARENT_DIR}/lib/interpreter.sh"
 source "${PARENT_DIR}/lib/lex_functions.sh"
 source "${PARENT_DIR}/lib/parse_functions.sh"
@@ -91,7 +92,7 @@ function lex {
 
    # For better error output printing. Can display the full original line, along
    # with a pointer to the offending error word/token.
-   mapfile -td $'\n' FILE_BY_LINES < "$CACHEFILE"
+   mapfile -td $'\n' FILE_BY_LINES < "$DATAFILE"
 
    # Iterate over array of characters. Lex into tokens.
    while [[ ${CURSOR[pos]} -lt ${#CHARRAY[@]} ]] ; do
@@ -219,12 +220,7 @@ function dump_nodes {
       if [[ -n ${!_NODE_*} ]] ; then
          declare -p ${!_NODE_*}
       fi
-   ) | sort -V -k3 > "$CACHEFILE"
-}
-
-
-function cache_ast {
-   dump_nodes > "$CACHEFILE"
+   ) | sort -V -k3 > "$DATAFILE"
 }
 
 #════════════════════════════════════╡ GO ╞═════════════════════════════════════
