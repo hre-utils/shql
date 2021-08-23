@@ -6,9 +6,15 @@
 # here. There's great error logging in the data compilation phase, why not also
 # in the query compilation and parsing?
 #
-# 3) When deleting the _DATA[ROOT] node, we lose the [ROOT] propr on _DATA.
+# 2) When deleting the _DATA[ROOT] node, we lose the [ROOT] propr on _DATA.
 # Unable to query or insert back onto it. Special case to re-establisht the
 # key?
+#
+# 3) Profiling... what's eating up all the time.
+#     a. any subprocessed:   $(...)
+#     b. print operations? make a buffer to append to, print once at the
+#        end--no reason printing should be on the fly
+#     c. dicts are currently very expensive, find out why
 
 # Query nodes & pointers
 declare -- FULL_QUERY      # Nameref to current transaction's query list
@@ -32,6 +38,10 @@ declare -- DATA_NODE       # Pointer to node selected by user's query
 
 # Current level of indentation
 declare -i INDNT_LVL=0
+
+## PROFILING
+declare -- WRITE_BUFFER=''
+declare -- DATA_NODE_TYPE
 
 #────────────────────────────────( exceptions )─────────────────────────────────
 function raise_key_error {
@@ -126,8 +136,9 @@ function intr_get_location {
       local key=${query[data]}
       local next=${node[$key]}
 
-      # Validation: type errors.
-      local node_type=$( get_type $DATA_NODE )
+      get_type $DATA_NODE
+      local node_type=$DATA_NODE_TYPE
+
       if [[ $node_type != ${query[type]} ]] ; then
          raise_type_error "${query[type]} subscription" "$node_type"
       fi
@@ -155,7 +166,9 @@ function intr_get_location {
 
 function intr_len {
    declare -n node=$DATA_NODE
-   declare -- data_node_type=$( get_type $DATA_NODE )
+
+   get_type $DATA_NODE
+   local data_node_type=$DATA_NODE_TYPE
 
    case $data_node_type in
       'string')       echo ${#node}    ;;
@@ -166,20 +179,24 @@ function intr_len {
 
 
 function intr_write {
+   # TODO: This is a pretty shit solution. Should temporarily disable the
+   # existing color, rather than re-writing the functions without it.
+
    declare -n node=${METHOD[data]}
    declare -- path=${node[data]}
 
    mkdir -p "$( dirname "$path" )"
 
-   # TODO: This is a pretty shit solution. Should temporarily disable the
-   # existing color, rather than re-writing the functions without it.
-   regular_print_data_by_type $DATA_NODE > "${path}"
+   regular_print_data_by_type $DATA_NODE
+   echo "$WRITE_BUFFER" #> "${path}"
 }
 
 
 function intr_insert {
    declare -n node=$DATA_NODE
-   declare -- data_node_type=$( get_type $DATA_NODE )
+
+   get_type $DATA_NODE
+   declare -- data_node_type=$DATA_NODE_TYPE
 
    declare -- insert_data_node=${METHOD[data]}
    declare -- index=${METHOD[index]}
@@ -250,7 +267,6 @@ function intr_insert {
 
 
 function intr_update {
-   declare -- data_node_type=$( get_type $DATA_NODE )
    declare -- insert_data_node=${METHOD[data]}
 
    intr_delete_by_type $DATA_NODE
@@ -270,9 +286,10 @@ function intr_print {
 
 function intr_append {
    declare -n node=$DATA_NODE
-
-   declare -- data_node_type=$( get_type $DATA_NODE )
    declare -- insert_data_node=${METHOD[data]}
+
+   get_type $DATA_NODE
+   declare -- data_node_type=$DATA_NODE_TYPE
 
    # Validation: must be list.
    if [[ $data_node_type != 'list' ]] ; then
@@ -289,9 +306,10 @@ function intr_append {
 
 function intr_prepend {
    declare -n node=$DATA_NODE
-
-   declare -- data_node_type=$( get_type $DATA_NODE )
    declare -- insert_data_node=${METHOD[data]}
+
+   get_type $DATA_NODE
+   declare -- data_node_type=$DATA_NODE_TYPE
 
    # Validation: must be list.
    if [[ $data_node_type != 'list' ]] ; then
@@ -313,17 +331,20 @@ function get_type {
    local t=$(declare -p $1 | awk '{print $2}')
 
    case $t in
-      '--')    echo 'string' ;;
-      '-a')    echo 'list'   ;;
-      '-A')    echo 'dict'   ;;
-      '-i')    echo 'int'    ;;
+      '--')    DATA_NODE_TYPE='string'  ;;
+      '-a')    DATA_NODE_TYPE='list'    ;;
+      '-A')    DATA_NODE_TYPE='dict'    ;;
+      '-i')    DATA_NODE_TYPE='int'     ;;
+      '-n')    DATA_NODE_TYPE='nameref' ;;
    esac
 }
 
 #══════════════════════════════════╡ DELETE ╞═══════════════════════════════════
 function intr_delete_by_type {
    local node_name=$1
-   local node_type=$( get_type $node_name )
+
+   get_type $node_name
+   local node_type=$DATA_NODE_TYPE
 
    case $node_type in
       'string'|'int')   intr_delete_string  $node_name ;;
@@ -375,7 +396,9 @@ function indent {
 
 function print_data_by_type {
    local node_name="$1"
-   local node_type=$( get_type "$node_name" )
+   
+   get_type $node_name
+   local node_type=$DATA_NODE_TYPE
 
    case $node_type in
       'string'|'int')  print_string "$node_name" ;;
@@ -445,7 +468,9 @@ function print_dict {
 #═══════════════════════════════╡ REGULAR PRINT ╞═══════════════════════════════
 function regular_print_data_by_type {
    local node_name="$1"
-   local node_type=$( get_type "$node_name" )
+
+   get_type $node_name
+   node_type=$DATA_NODE_TYPE
 
    case $node_type in
       'string'|'int')  regular_print_string "$node_name" ;;
@@ -457,65 +482,44 @@ function regular_print_data_by_type {
 
 function regular_print_string {
    declare -n node=$1
-   echo "${node@Q}"
+   WRITE_BUFFER+="${node@Q}"
 }
 
 
 function regular_print_list {
    declare -n node=$1
 
-   echo "["
-   ((INDNT_LVL++))
-
+   WRITE_BUFFER+='['
    for idx in "${!node[@]}" ; do
       declare child_name="${node[$idx]}"
-
-      indent
-      echo -n "$(regular_print_data_by_type ${child_name})"
-
-      if [[ $idx -lt $(( ${#node[@]} -1 )) ]] ; then
-         echo ", "
-      else
-         echo
-      fi
+      regular_print_data_by_type ${child_name}
+      WRITE_BUFFER+=','
    done
-
-   ((INDNT_LVL--))
-   indent ; echo "]"
+   WRITE_BUFFER+=']'
 }
 
 
 function regular_print_dict {
-   echo -e "{"
-   ((INDNT_LVL++))
+   WRITE_BUFFER+='{'
 
    declare node_name="$1"
    declare -n node="$node_name"
 
-   declare -i num_keys_printed=0
-   declare -i total_keys=${#node[@]}
-
    for child_key in "${!node[@]}" ; do
-      ((num_keys_printed++))
-      indent
-      echo -n "${child_key}: "
-      echo -n "$(regular_print_data_by_type ${node[$child_key]})"
-
-      if [[ $num_keys_printed -lt $total_keys ]] ; then
-         echo ","
-      else
-         echo
-      fi
+      WRITE_BUFFER+="${child_key}: "
+      regular_print_data_by_type ${node[$child_key]}
+      WRITE_BUFFER+=','
    done
 
-   ((INDNT_LVL--))
-   indent ; echo "}"
+   WRITE_BUFFER+='}'
 }
 
 #══════════════════════════════════╡ INSERT ╞═══════════════════════════════════
 function intr_insert_by_type {
    local node_name=$1
-   local node_type=$( get_type $node_name )
+
+   get_type $node_name
+   local node_type=$DATA_NODE_TYPE
 
    case $node_type in
       'string'|'int') intr_insert_string $node_name ;;

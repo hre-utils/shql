@@ -173,8 +173,6 @@ function parse {
 }
 
 #════════════════════════════════════╡ GO ╞═════════════════════════════════════
-# Read the nodes output by the data_parser.
-
 lex
 parse
 interpret
