@@ -16,6 +16,16 @@ declare -- CACHEFILE="${2:-/dev/stdout}"
 # pass in a directory, and maybe create a file within that dir (only if the hash
 # does not yet exist), how do we inform the user which file was just created, if
 # any?
+#
+# I think it makes sense in this context: we pass in a known quantity (an empty
+# file), which is filled by the script. It returns an unknown (the hash). We
+# cannot be operating with two unknowns (the file name, and the hash). We pass
+# in a location where we want the hash, then we get back the hash. This feels
+# like an okay approach.
+#
+# To test if we've already cached the file, we'll need make an assumption that
+# you've specified 
+
 
 function cache_ast {
    dump_nodes > "$DATAFILE"
