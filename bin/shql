@@ -11,6 +11,8 @@
 # on the command line.
 
 #──────────────────────────────────( global )───────────────────────────────────
+set -e
+
 export SHQL_ROOT=$( dirname $(cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd) )
 
 # String buffers to hold the raw text of our input JSON, and the query string.
@@ -177,5 +179,9 @@ elif [[ -n ${__query_file__} ]] ; then
 fi
 
 #────────────────────────────────────( go )─────────────────────────────────────
-bash "$SHQL_ROOT/lib/shql/data_parser.sh" "$JSON_FILE" | \
-bash "$SHQL_ROOT/lib/shql/query_parser.sh" "$QUERY_DATA"
+cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/hre-utils/shql"
+data_file="${cache_dir}/data"
+mkdir -p "$(dirname "$data_file")"
+
+bash "$SHQL_ROOT/lib/shql/data_parser.sh" "$JSON_FILE" > "$data_file"
+bash "$SHQL_ROOT/lib/shql/query_parser.sh" "$QUERY_DATA" "$data_file"

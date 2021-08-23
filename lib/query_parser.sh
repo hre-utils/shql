@@ -3,10 +3,13 @@
 
 #══════════════════════════════════╡ GLOBAL ╞═══════════════════════════════════
 declare -- QUERY_DATA="$1"
+declare -- COMPILED_DATA="${2:-/dev/stdin}"
+source "$COMPILED_DATA"
 
 # Validation: require *some* data is passed in.
 if [[ -z $QUERY_DATA ]] ; then
    echo "Argument Error: [\$2] Requires query." 1>&2
+   exit -1
 fi
 
 # Source dependencies.
@@ -156,39 +159,12 @@ function lex {
 #  delete      -> '(' ')'
 #  print       -> '(' ')'
 #  write       -> '(' string ')'
-#  data        -> string
-#               | list
+#  data        -> STRING
+#               | INTEGER
 #               | dict
-#  string      -> '"' non-"-chars '"'
+#               | list
 #  list        -> '[' data (COMMA data)* (COMMA)? ']'
 #  dict        -> '{' string COLON data (COMMA string COLON data)* (COMMA)? '}'
-#
-#
-# Example created data structure.
-#  declare -a REQUEST=(
-#     R1
-#     R2
-#  )
-#
-#  declare -A R1=(
-#     [query]=Q1
-#     [method]=M1
-#  )
-#
-#  declare -A Q1=(
-#     [type]=list|dict
-#     [data]=
-#  )
-#
-#  declare -A M1=(
-#     [type]=insert|update|delete|...
-#     [data]=A1
-#  )
-#
-#  declare -a A1=(
-#     'argument1'
-#     'argument2'
-#  )
 
 function parse {
    check_lex_errors
@@ -198,7 +174,6 @@ function parse {
 
 #════════════════════════════════════╡ GO ╞═════════════════════════════════════
 # Read the nodes output by the data_parser.
-source /dev/stdin
 
 lex
 parse

@@ -138,7 +138,7 @@ function lex {
 #══════════════════════════════════╡ PARSER ╞═══════════════════════════════════
 # grammar:
 #     root -> dict EOF
-#               | list EOF
+#           | list EOF
 #     list -> '[' data (COMMA data)* (COMMA)? ']'
 #     dict -> '{' string COLON data (COMMA string COLON data)* (COMMA)? '}'
 #     data -> dict
