@@ -1,9 +1,0 @@
-Got myself into a bit of a Catch 22 here.
-
-Need to determine the json hash up front, so it can be passed as a param to both
-the json data parser, and the query parser.
-
-However we don't have the full text of the input json until it's read by the
-data parser itself.
-
-Can't run it 'til we have it--can't have it 'til we run it.

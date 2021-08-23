@@ -3,27 +3,15 @@
 
 #══════════════════════════════════╡ GLOBAL ╞═══════════════════════════════════
 declare -- QUERY_DATA="$1"
-declare -- DATAFILE="$2"
 
 # Validation: require *some* data is passed in.
 if [[ -z $QUERY_DATA ]] ; then
-   echo "Argument Error: [\$1] Requires query." 1>&2
-fi
-
-# Validation: require cache file specified
-if [[ -z $DATAFILE ]] ; then
-   echo "Argument Error: [\$2] Requires data file." 1>&2
-fi
-
-# Validation: require data file *exists*
-if [[ ! -e "$DATAFILE" ]] ; then
-   echo "File Error: File '$DATAFILE' does not exist." 1>&2
-else
-   source "$DATAFILE"
+   echo "Argument Error: [\$2] Requires query." 1>&2
 fi
 
 # Source dependencies.
-declare -- PARENT_DIR=$(dirname "$(cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd)")
+declare -- PROGDIR=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd )
+declare -- PARENT_DIR=$(dirname "$PROGDIR")
 source "${PARENT_DIR}/lib/interpreter.sh"
 source "${PARENT_DIR}/lib/lex_functions.sh"
 source "${PARENT_DIR}/lib/parse_functions.sh"
@@ -89,10 +77,6 @@ function lex {
    while read -rN1 c ; do
       CHARRAY+=( "$c" )
    done <<< "$QUERY_DATA"
-
-   # For better error output printing. Can display the full original line, along
-   # with a pointer to the offending error word/token.
-   mapfile -td $'\n' FILE_BY_LINES < "$DATAFILE"
 
    # Iterate over array of characters. Lex into tokens.
    while [[ ${CURSOR[pos]} -lt ${#CHARRAY[@]} ]] ; do
@@ -212,19 +196,10 @@ function parse {
    munch 'EOF'
 }
 
-
-function dump_nodes {
-   (
-      declare -p _META
-      declare -p _DATA
-      if [[ -n ${!_NODE_*} ]] ; then
-         declare -p ${!_NODE_*}
-      fi
-   ) | sort -V -k3 > "$DATAFILE"
-}
-
 #════════════════════════════════════╡ GO ╞═════════════════════════════════════
+# Read the nodes output by the data_parser.
+source /dev/stdin
+
 lex
 parse
 interpret
-dump_nodes

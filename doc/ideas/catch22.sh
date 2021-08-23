@@ -3,9 +3,6 @@
 #!/bin/bash
 # shql.sh
 #
-# Run either with a filename:
-# Or from stdin:                 echo '{"this": "that"}' | ./shql -q '/.this > print()'
-#
 # Assuming called with the first form:
 # ./shql -q '/.this > print()' data.json
 

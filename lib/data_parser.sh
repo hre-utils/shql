@@ -3,36 +3,11 @@
 
 #══════════════════════════════════╡ GLOBAL ╞═══════════════════════════════════
 declare -- JSON_FILE="${1:-/dev/stdin}"
-declare -- CACHEFILE="${2:-/dev/stdout}"
-
-# Need to entirely re-think through the concept of caching, as it relates to
-# this utility. Obviously we want to avoid re-compiling data, as it's an
-# expensive operation in bash. But is there a good way to do it such that it
-# does not dramatically alter how this script would work as a standalone script?
-#
-# Do you give an output cache file? Or should the script determine it itself?
-# How would the latter work. And if it does it that way, how does it communicate
-# back to the caller what file was created, or where. Similarly, if we want to
-# pass in a directory, and maybe create a file within that dir (only if the hash
-# does not yet exist), how do we inform the user which file was just created, if
-# any?
-#
-# I think it makes sense in this context: we pass in a known quantity (an empty
-# file), which is filled by the script. It returns an unknown (the hash). We
-# cannot be operating with two unknowns (the file name, and the hash). We pass
-# in a location where we want the hash, then we get back the hash. This feels
-# like an okay approach.
-#
-# To test if we've already cached the file, we'll need make an assumption that
-# you've specified 
-
-
-function cache_ast {
-   dump_nodes > "$DATAFILE"
-}
+declare -- JSON_DATA
 
 # Source dependencies.
-declare -- PARENT_DIR=$(dirname "$(cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd)")
+declare -- PROGDIR=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd )
+declare -- PARENT_DIR=$(dirname "$PROGDIR")
 source "${PARENT_DIR}/lib/lex_functions.sh"
 source "${PARENT_DIR}/lib/parse_functions.sh"
 source "${PARENT_DIR}/share/config.sh"
@@ -94,16 +69,19 @@ declare -- NODE_PREFIX='_NODE_'
 
 #═══════════════════════════════════╡ LEXER ╞═══════════════════════════════════
 function lex {
+   # So we don't need to read from the file twice.
+   JSON_DATA=$( cat "$JSON_FILE" )
+
    # Fill individual characters into array, allows more easy 'peek' operations.
    while read -rN1 c ; do
       CHARRAY+=( "$c" )
-   done < "$JSON_FILE"
+   done <<< "$JSON_DATA"
 
    # Creating secondary line buffer to do better debug output printing. It would
    # be more efficient to *only* hold a buffer of lines up until each newline.
    # Unpon an error, we'd only need to save the singular line, then can resume
    # overwriting. This is in TODO already.
-   mapfile -td $'\n' FILE_BY_LINES < "$JSON_FILE"
+   mapfile -td $'\n' FILE_BY_LINES <<< "$JSON_DATA"
 
    while [[ ${CURSOR[pos]} -lt ${#CHARRAY[@]} ]] ; do
       advance
@@ -191,18 +169,8 @@ function dump_nodes {
    ) | sort -V -k3
 }
 
-
-function cache_ast {
-   dump_nodes > "$CACHEFILE"
-}
-
 #════════════════════════════════════╡ GO ╞═════════════════════════════════════
-# Cached?
-if [[ "$CACHEFILE" != /dev/stdout && -e "$CACHEFILE" ]] ; then
-   exit 0
-fi
-
 # Compile.
 lex
 parse
-cache_ast
+dump_nodes
