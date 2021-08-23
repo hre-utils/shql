@@ -13,11 +13,11 @@ requisite_paths=(
 )
 
 for f in "${requisite_paths[@]}" ; do
-   install -d -m 755 "${PREFIX}/${f}"
+   install -v -d -m 755 "${PREFIX}/${f}"
 done
 
-install -m 755 "${PROGDIR}/bin/"*     "${PREFIX}/bin/"
-install -m 755 "${PROGDIR}/lib/"*     "${PREFIX}/lib/shql/"
-install -m 644 "${PROGDIR}/share/"*   "${PREFIX}/share/shql/"
+install -v -m 755 "${PROGDIR}/bin/"*     "${PREFIX}/bin/"
+install -v -m 755 "${PROGDIR}/lib/"*     "${PREFIX}/lib/shql/"
+install -v -m 644 "${PROGDIR}/share/"*   "${PREFIX}/share/shql/"
 
 echo "Installed 'shql' -> ${PREFIX}."

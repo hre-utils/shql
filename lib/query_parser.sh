@@ -10,12 +10,12 @@ if [[ -z $QUERY_DATA ]] ; then
 fi
 
 # Source dependencies.
-declare -- PROGDIR=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd )
-declare -- PARENT_DIR=$(dirname "$PROGDIR")
-source "${PARENT_DIR}/lib/interpreter.sh"
-source "${PARENT_DIR}/lib/lex_functions.sh"
-source "${PARENT_DIR}/lib/parse_functions.sh"
-source "${PARENT_DIR}/share/config.sh"
+# SHQL_ROOT is exported in the `shql` script. It is expected to be set to the
+# root of the install location (e.g., /usr/local).
+source "${SHQL_ROOT}/lib/shql/interpreter.sh"
+source "${SHQL_ROOT}/lib/shql/lex_functions.sh"
+source "${SHQL_ROOT}/lib/shql/parse_functions.sh"
+source "${SHQL_ROOT}/share/shql/config.sh"
 
 # For printing better error output.
 declare -a FILE_BY_LINES

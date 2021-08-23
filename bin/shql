@@ -11,12 +11,11 @@
 # on the command line.
 
 #──────────────────────────────────( global )───────────────────────────────────
+export SHQL_ROOT=$( dirname $(cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd) )
+
 # String buffers to hold the raw text of our input JSON, and the query string.
 declare -- JSON_FILE
 declare -- QUERY_DATA
-
-declare -- PROGDIR=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd )
-declare -- PARENT_DIR=$(dirname "$PROGDIR")
 
 #─────────────────────────────────( functions )─────────────────────────────────
 function quick_usage {
@@ -178,5 +177,5 @@ elif [[ -n ${__query_file__} ]] ; then
 fi
 
 #────────────────────────────────────( go )─────────────────────────────────────
-bash "$PARENT_DIR/lib/data_parser.sh" "$JSON_FILE" | \
-bash "$PARENT_DIR/lib/query_parser.sh" "$QUERY_DATA"
+bash "$SHQL_ROOT/lib/shql/data_parser.sh" "$JSON_FILE" | \
+bash "$SHQL_ROOT/lib/shql/query_parser.sh" "$QUERY_DATA"
