@@ -6,15 +6,9 @@
 # here. There's great error logging in the data compilation phase, why not also
 # in the query compilation and parsing?
 #
-# 2) When deleting the _DATA[ROOT] node, we lose the [ROOT] propr on _DATA.
-# Unable to query or insert back onto it. Special case to re-establisht the
+# 2) When deleting the _DATA[ROOT] node, we lose the [ROOT] prop on _DATA.
+# Unable to query or insert back onto it. Special case to re-establish the
 # key?
-#
-# 3) Profiling... what's eating up all the time.
-#     a. any subprocessed:   $(...)
-#     b. print operations? make a buffer to append to, print once at the
-#        end--no reason printing should be on the fly
-#     c. dicts are currently very expensive, find out why
 
 # Query nodes & pointers
 declare -- FULL_QUERY      # Nameref to current transaction's query list
@@ -39,7 +33,10 @@ declare -- DATA_NODE       # Pointer to node selected by user's query
 # Current level of indentation
 declare -i INDNT_LVL=0
 
-## PROFILING
+# Profiling
+# Trying to make things a bit faster with less subshells. Indent and Print calls
+# append to the WRITE_BUFFER, which is echo'd at the end (rather than
+# incrementally). Getting the type of a node is stored in the DATA_NODE_TYPE.
 declare -- WRITE_BUFFER=''
 declare -- DATA_NODE_TYPE
 
@@ -91,7 +88,8 @@ function raise_insert_list_index_error {
 #════════════════════════════════╡ INTERPRETER ╞════════════════════════════════
 function interpret {
    for transaction_name in "${REQUEST[@]}" ; do
-      # Reset to default.
+      # Reset to defaults.
+      WRITE_BUFFER=''
       DATA_PATH=() DATA_NODE=_DATA
 
       declare -n  transaction=$transaction_name
@@ -281,6 +279,7 @@ function intr_delete {
 
 function intr_print {
    print_data_by_type $DATA_NODE
+   echo -e "$WRITE_BUFFER"
 }
 
 
@@ -390,7 +389,7 @@ function intr_delete_array {
 
 #═══════════════════════════════╡ PRETTY PRINT ╞════════════════════════════════
 function indent {
-   printf -- "%$(( INDNT_LVL * INDNT_SPS ))s"  ''
+   WRITE_BUFFER+=$( printf -- "%$(( INDNT_LVL * INDNT_SPS ))s"  '' )
 }
 
 
@@ -401,45 +400,53 @@ function print_data_by_type {
    local node_type=$DATA_NODE_TYPE
 
    case $node_type in
-      'string'|'int')  print_string "$node_name" ;;
-      'list')          print_list   "$node_name" ;;
-      'dict')          print_dict   "$node_name" ;;
+      'string')   print_string "$node_name" ;;
+      'list')     print_list   "$node_name" ;;
+      'dict')     print_dict   "$node_name" ;;
+      'int')      print_int    "$node_name" ;;
    esac
+}
+
+
+function print_int {
+   declare -n node=$1
+   WRITE_BUFFER+="${HI_LINK[STRING]}${node}${rst}"
 }
 
 
 function print_string {
    declare -n node=$1
-   echo "${HI_LINK[STRING]}${node@Q}${rst}"
+   WRITE_BUFFER+="${HI_LINK[STRING]}${node@Q}${rst}"
 }
 
 
 function print_list {
    declare -n node=$1
 
-   echo "${HI_LINK[SURROUND]}[${rst}"
+   WRITE_BUFFER+="${HI_LINK[SURROUND]}[${rst}\n"
    ((INDNT_LVL++))
 
    for idx in "${!node[@]}" ; do
       declare child_name="${node[$idx]}"
 
       indent
-      echo -n "$(print_data_by_type ${child_name})"
+      print_data_by_type ${child_name}
 
       if [[ $idx -lt $(( ${#node[@]} -1 )) ]] ; then
-         echo "${HI_LINK[SURROUND]},${rst} "
+         WRITE_BUFFER+="${HI_LINK[SURROUND]},${rst}\n"
       else
-         echo
+         WRITE_BUFFER+="\n"
       fi
    done
 
    ((INDNT_LVL--))
-   indent ; echo "${HI_LINK[SURROUND]}]${rst}"
+   indent
+   WRITE_BUFFER+="${HI_LINK[SURROUND]}]${rst}"
 }
 
 
 function print_dict {
-   echo -e "${HI_LINK[SURROUND]}{${rst}"
+   WRITE_BUFFER+="${HI_LINK[SURROUND]}{${rst}\n"
    ((INDNT_LVL++))
 
    declare node_name="$1"
@@ -451,18 +458,19 @@ function print_dict {
    for child_key in "${!node[@]}" ; do
       ((num_keys_printed++))
       indent
-      echo -n "${HI_LINK[KEY]}${child_key}${rst}${HI_LINK[SURROUND]}:${rst} "
-      echo -n "$(print_data_by_type ${node[$child_key]})"
+      WRITE_BUFFER+="${HI_LINK[KEY]}${child_key}${rst}${HI_LINK[SURROUND]}:${rst} "
+      print_data_by_type ${node[$child_key]}
 
       if [[ $num_keys_printed -lt $total_keys ]] ; then
-         echo "${HI_LINK[COMMA]},${rst} "
+         WRITE_BUFFER+="${HI_LINK[COMMA]},${rst}\n"
       else
-         echo
+         WRITE_BUFFER+="\n"
       fi
    done
 
    ((INDNT_LVL--))
-   indent ; echo "${HI_LINK[SURROUND]}}${rst}"
+   indent
+   WRITE_BUFFER+="${HI_LINK[SURROUND]}}${rst}"
 }
 
 #═══════════════════════════════╡ REGULAR PRINT ╞═══════════════════════════════
@@ -506,7 +514,7 @@ function regular_print_dict {
    declare -n node="$node_name"
 
    for child_key in "${!node[@]}" ; do
-      WRITE_BUFFER+="${child_key}: "
+      WRITE_BUFFER+="${child_key}:"
       regular_print_data_by_type ${node[$child_key]}
       WRITE_BUFFER+=','
    done
