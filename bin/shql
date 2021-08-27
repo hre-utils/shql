@@ -138,6 +138,13 @@ if [[ ${#__positional__[@]} -gt 1 ]] ; then
    )
 fi
 
+# Invalid opts.
+if [[ ${#__invalid_opt__[@]} -gt 0 ]] ; then
+   argument_errors+=(
+      "Argument Error: the following opts are invalid: ${__invalid_opt__[*]}."
+   )
+fi
+
 # Query: May not have both a query file & query string.
 if [[ -n ${__query_file__} && -n ${__query__} ]] ; then
    argument_errors+=(
