@@ -11,17 +11,17 @@ Run `sudo install.sh`.
 [source]
 ----
 usage:
-   shql -q query_string [<file>]
-   shql -f query_file [<file>]
+   shql -q query_string <json_file>
+   shql -f query_file <json_file>
 
-Options:
+options:
    -h, --help        Print this message and exit
    -q, --query       Performs QUERY on input JSON
    -f, --query-file  Performs queries from a file on input JSON
 
-Examples:
+examples:
    Read data from a configuration file, update a value, then print to validate:
-   $ shql -q '/.foo > update('bar'); / > print()' config.json
+   $ shql -q '/.foo > update("bar"); / > print()' config.json
 
    Insert data into the 3rd index of an existing list:
    $ shql -q '/.bar > insert(3, "new list item")' config.json
