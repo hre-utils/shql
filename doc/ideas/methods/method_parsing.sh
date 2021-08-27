@@ -23,7 +23,7 @@ declare -- json='
 }
 '
 
-declare -- query='/.this > insert(1, [)'
+declare -- query='/.this > insert(1, ["one", "two"])'
 
 
 #───────────────────────────────( data: parsed )────────────────────────────────
